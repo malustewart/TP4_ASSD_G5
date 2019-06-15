@@ -53,6 +53,7 @@ typedef  struct
     circular_buffer<SAMPLE>& samples_out_left;
     circular_buffer<SAMPLE>& samples_out_right;
     bool isFirstTime;
+    float & stretch;
 //    vector<double> samples_in_right;
 //    vector<double> samples_in_left;
 //    vector<double>::iterator next_sample_right;
@@ -157,7 +158,7 @@ static int wav_pitch_Callback( const void *inputBuffer, void *outputBuffer,
             float targetFundF = 0.0f;
             if (originalFundF != NAN)
             {
-                targetFundF = getTargetFundamentalFrequency(originalFundF);
+                targetFundF = originalFundF * ud->stretch; //getTargetFundamentalFrequency(originalFundF);
                 stretch(ud->samples_out_left , ud->samples_in_left , framesPerBuffer, originalFundF, targetFundF);
                 stretch(ud->samples_out_right, ud->samples_in_right, framesPerBuffer, originalFundF, targetFundF);
             }
@@ -201,8 +202,12 @@ PaError set_wav_pitch_cb(PaStream*& stream, PaStreamParameters& inputParameters,
         samples_out_right.push_back(0.0);
     }
 
-    wav_pitch_user_data_t userdata = {samples_in_left, samples_in_right,samples_out_left, samples_out_right, true};
+    int stretch_exponent = 0;
+    float stretch = pow(2,stretch_exponent);
 
+    wav_pitch_user_data_t userdata = {samples_in_left, samples_in_right,samples_out_left, samples_out_right, true, stretch};
+
+    char control = 0;
 
     err = Pa_OpenStream(
             &stream,
@@ -219,20 +224,32 @@ PaError set_wav_pitch_cb(PaStream*& stream, PaStreamParameters& inputParameters,
         if(err == paNoError)
         {
             printf("Hit ENTER to stop program.\n");
-            getchar();
+            while(control != 'e') //TODO:
+            {
+                cin >> control;
+                if(control == 'r' || control == 'R')
+                {
+                    stretch_exponent++;
+                    stretch = pow(2,(float)stretch_exponent/12.0);
+                }
+                else if(control == 'l' || control == 'L')
+                {
+                    stretch_exponent--;
+                    stretch = pow(2,(float)stretch_exponent/12.0);
+                }
+            }
         }
     }
     return err;
 }
 
-//TODO: si queda muy bajas las frecuencias, limitar el tau maximo
 float getFundamentalFrequency(circular_buffer<SAMPLE>& samples, unsigned int n_samples)
 {
     float max_autocorrelation = 0.0;
     float freq = NAN;
     float autocorrelation = NAN;
     //tau_min = fs/f_fund_max
-    for (int tau = 20; tau < n_samples - 300; ++tau)    //TODO: sacar magic number. si aumenta, no distingo frecuencias mas bajas pero es mas rapido y no se traba
+    for (int tau = 100; tau < n_samples - 300; ++tau)    //TODO: sacar magic number. si aumenta, no distingo frecuencias mas bajas pero es mas rapido y no se traba
     {
         autocorrelation = autocorrelation_v1(samples, n_samples, tau);
         if(autocorrelation > max_autocorrelation)
@@ -320,7 +337,7 @@ void stretch(circular_buffer<SAMPLE> & samples_out, circular_buffer<SAMPLE> & sa
     float window_length =  SAMPLE_RATE/originalFundamentalFrequency;
     unsigned int offset = getPitchMarkOffset(samples_in, (unsigned int)window_length);
     int window_center_in = offset;
-    float stretch = 0.9;//targetFundamentalFrequency/originalFundamentalFrequency;
+    float stretch = targetFundamentalFrequency/originalFundamentalFrequency;
     int window_center_out = getOutputWindowCenter(0, offset, window_length, stretch);
 
 
