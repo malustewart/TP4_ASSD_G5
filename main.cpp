@@ -12,6 +12,7 @@ using namespace std;
 
 int main() {
 
+/*
     AudioFile<double> wav_manager;
 
     string filepath("scream");
@@ -19,6 +20,7 @@ int main() {
 
     wav_manager.load(filepath);
     wav_manager.printSummary();
+*/
 
 //******PORTAUDIO CONFIG***********//
     PaStreamParameters inputParameters, outputParameters;

@@ -10,13 +10,13 @@
 #include <vector>
 
 #define SAMPLE_RATE         (44100)
-#define FRAMES_PER_BUFFER   (512)
+#define FRAMES_PER_BUFFER   (600)
 #define PITCH_DETECT_SEGMENT_LENGTH       ((SAMPLE_RATE)/100) //TODO: borrar magic number
 
 #define GET_FREQ(o,n)       (FUND_FREQ * pow(2, ((float)(n) + OCTAVE_SUBDIVISION*(float)(octave))/OCTAVE_SUBDIVISION))
 
 #define OCTAVES             (5)
-#define OCTAVE_SUBDIVISION  (4)
+#define OCTAVE_SUBDIVISION  (12)
 #define FUND_FREQ C_FREQ
 #define C_FREQ  32.7
 #define Cs_FREQ 34.65
@@ -68,7 +68,7 @@ float getTargetFundamentalFrequency(float originalFundamentalFrequency);
 float autocorrelation_v1(circular_buffer<SAMPLE> &  samples, unsigned int n_samples, unsigned int tau);
 float autocorrelation_v2(circular_buffer<SAMPLE> &  samples, unsigned int n_samples, unsigned int tau);
 unsigned int getPitchMarkOffset(circular_buffer<SAMPLE> & samples, unsigned int tau);
-unsigned int getOutputWindowCenter(unsigned int window_index, unsigned int offset, float window_length, float stretch);
+unsigned int getOutputWindowCenter(int window_index, unsigned int offset, float window_length, float stretch);
 
 
 /*
@@ -145,23 +145,29 @@ static int wav_pitch_Callback( const void *inputBuffer, void *outputBuffer,
                 for (int i = 0; i < framesPerBuffer; ++i)
                 {
                     ud->samples_out_left.pop_front();
+                    ud->samples_out_left.push_back(0.0);
                     ud->samples_out_right.pop_front();
+                    ud->samples_out_right.push_back(0.0);
+
                 }
             }
 
             //TODO: menos distorsion con frecuencias mas chicas porque implica ventanas mas grandes
-            float originalFundF = getFundamentalFrequency(ud->samples_in_left, framesPerBuffer) / 4.0;
+            float originalFundF = getFundamentalFrequency(ud->samples_in_left, framesPerBuffer);
             float targetFundF = 0.0f;
             if (originalFundF != NAN)
             {
                 targetFundF = getTargetFundamentalFrequency(originalFundF);
-                stretch(ud->samples_out_left , ud->samples_in_left , framesPerBuffer, originalFundF, originalFundF);
-                stretch(ud->samples_out_right, ud->samples_in_right, framesPerBuffer, originalFundF, originalFundF);
+                stretch(ud->samples_out_left , ud->samples_in_left , framesPerBuffer, originalFundF, targetFundF);
+                stretch(ud->samples_out_right, ud->samples_in_right, framesPerBuffer, originalFundF, targetFundF);
             }
 
             for (int i = 0; i < framesPerBuffer; ++i)
             {
-                *out++ = ud->samples_out_left[i];
+                float sample_out = ud->samples_out_left[i];
+                float sample_in = ud->samples_in_left[i];
+                float dis = sample_in - sample_out;
+                *out++ = ud->samples_in_left[i];
                 *out++ = ud->samples_out_right[i];
             }
 
@@ -189,6 +195,11 @@ PaError set_wav_pitch_cb(PaStream*& stream, PaStreamParameters& inputParameters,
     samples_in_right.reserve(2*FRAMES_PER_BUFFER);
     samples_out_left.reserve(2*FRAMES_PER_BUFFER);
     samples_out_right.reserve(2*FRAMES_PER_BUFFER);
+
+    for (int i = 0; i < 2*FRAMES_PER_BUFFER; ++i) {
+        samples_out_left.push_back(0.0);
+        samples_out_right.push_back(0.0);
+    }
 
     wav_pitch_user_data_t userdata = {samples_in_left, samples_in_right,samples_out_left, samples_out_right, true};
 
@@ -260,23 +271,27 @@ float getTargetFundamentalFrequency(float originalFundamentalFrequency)
     float aux = (log2f(originalFundamentalFrequency / FUND_FREQ));
     int octave = (int)aux;
     int note = (int)roundf(OCTAVE_SUBDIVISION*(aux-octave));  // note in octave (from 0 (fundamental) to OCTAVE_SUBDIVISION - 1)
-    return GET_FREQ(octave, note);
+    return GET_FREQ(octave, 0);
 }
+/*
 
 void stretch(circular_buffer<SAMPLE> & samples_out, circular_buffer<SAMPLE> & samples_in, unsigned int n_samples, float originalFundamentalFrequency, float targetFundamentalFrequency)
 {
-    unsigned int offset = getPitchMarkOffset(samples_in, (unsigned int)(SAMPLE_RATE/originalFundamentalFrequency));
-    float window_length = SAMPLE_RATE/originalFundamentalFrequency;
+    float window_length =  SAMPLE_RATE/originalFundamentalFrequency*2;
+    unsigned int offset = getPitchMarkOffset(samples_in, (unsigned int)window_length);
     int window_center_in = offset;
-    int window_center_out = 0;
-    float stretch = targetFundamentalFrequency/originalFundamentalFrequency;
+    float stretch = 1.5;//targetFundamentalFrequency/originalFundamentalFrequency;
+    int window_center_out = getOutputWindowCenter(0, offset, window_length, stretch);
 
-    for(int i = -1;
-        window_center_out < (n_samples + window_length/2);
-        ++i)
+
+    for(int i = 0, counter=0;   // i: samples_in. counter: samples_out.
+//        window_center_out <= n_samples;
+        window_center_out < n_samples + window_length;
+        ++i, ++counter)
     {
-        window_center_in = offset + i * window_length;
-        window_center_out = getOutputWindowCenter(i, offset, window_length, stretch);
+        window_center_in = offset + i * window_length / 2;
+        window_center_out = getOutputWindowCenter(counter, offset, window_length, stretch);
+
 
         for (int j = -window_length/2;
                  j <= window_length/2;
@@ -284,12 +299,60 @@ void stretch(circular_buffer<SAMPLE> & samples_out, circular_buffer<SAMPLE> & sa
         {
             if((window_center_in + j) >= 0 && (window_center_out + j) >=0)
             {
-                float hann = 0.5; //HANN_FACTOR(window_length, j);
-                samples_out[window_center_out + j] = samples_in[window_center_in + j]*hann;
+                float hann = HANN_FACTOR(window_length, j);
+                unsigned int index = window_center_out + j;
+                float value = samples_in[index];
+                float stored = samples_out[index];
+                samples_out[index] += value*hann/stretch;
             }
+        }
+        if(counter % 3 == 0)
+        {
+            i--;
         }
     }
 }
+
+*/
+
+void stretch(circular_buffer<SAMPLE> & samples_out, circular_buffer<SAMPLE> & samples_in, unsigned int n_samples, float originalFundamentalFrequency, float targetFundamentalFrequency)
+{
+    float window_length =  SAMPLE_RATE/originalFundamentalFrequency;
+    unsigned int offset = getPitchMarkOffset(samples_in, (unsigned int)window_length);
+    int window_center_in = offset;
+    float stretch = 0.9;//targetFundamentalFrequency/originalFundamentalFrequency;
+    int window_center_out = getOutputWindowCenter(0, offset, window_length, stretch);
+
+
+    for(int i = 0, counter=0;   // i: samples_in. counter: samples_out.
+//        window_center_out <= n_samples;
+        window_center_out < n_samples + window_length;
+        ++counter)
+    {
+        window_center_in = offset + i * window_length / 2;
+        window_center_out = getOutputWindowCenter(counter, offset, window_length, stretch);
+
+
+        for (int j = -window_length/2;
+             j <= window_length/2;
+             j++)
+        {
+            if((window_center_in + j) >= 0 && (window_center_out + j) >=0)
+            {
+                float hann = HANN_FACTOR(window_length, j);
+                unsigned int index = window_center_out + j;
+                float value = samples_in[index];
+                float stored = samples_out[index];
+                samples_out[index / stretch] += value*hann/stretch;
+            }
+        }
+//        if(counter % 2 == 0)
+        {
+            i = (int)((float)counter / stretch);
+        }
+    }
+}
+
 
 unsigned int getPitchMarkOffset(circular_buffer<SAMPLE> & samples, unsigned int tau)
 {
@@ -306,7 +369,7 @@ unsigned int getPitchMarkOffset(circular_buffer<SAMPLE> & samples, unsigned int 
     return offset;
 }
 
-unsigned int getOutputWindowCenter(unsigned int window_index, unsigned int offset, float window_length, float stretch)
+unsigned int getOutputWindowCenter(int window_index, unsigned int offset, float window_length, float stretch)
 {
-    return (unsigned int)((offset + window_index * window_length)*stretch);
+    return (unsigned int)((offset + window_index * window_length / 2)/stretch);
 }
