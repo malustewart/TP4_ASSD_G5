@@ -4,14 +4,20 @@
 
 #include "set_wav_pitch_cb.h"
 #include "circular_buffer.h"
+#include "AudioFile.h"
 #include <stdio.h>
 #include <math.h>
 #include <iostream>
 #include <vector>
 
 #define SAMPLE_RATE         (44100)
-#define FRAMES_PER_BUFFER   (600)
-#define PITCH_DETECT_SEGMENT_LENGTH       ((SAMPLE_RATE)/100) //TODO: borrar magic number
+#define FRAMES_PER_BUFFER   (1000)
+
+#define USE_WAV
+#define WAV_FILE "../sineSweep"  //Path relativo del archivo .wav SIN EXTENSION
+#define WAV_EXTENSION ".wav"
+
+
 
 #define GET_FREQ(o,n)       (FUND_FREQ * pow(2, ((float)(n) + OCTAVE_SUBDIVISION*(float)(octave))/OCTAVE_SUBDIVISION))
 
@@ -20,6 +26,7 @@
 #define FUND_FREQ C_FREQ
 #define C_FREQ  32.7
 #define Cs_FREQ 34.65
+#define D_FREQ  36.71
 #define D_FREQ  36.71
 #define Ds_FREQ 38.89
 #define E_FREQ  41.20
@@ -54,11 +61,6 @@ typedef  struct
     circular_buffer<SAMPLE>& samples_out_right;
     bool isFirstTime;
     float & stretch;
-//    vector<double> samples_in_right;
-//    vector<double> samples_in_left;
-//    vector<double>::iterator next_sample_right;
-//    vector<double>::iterator next_sample_left;
-//    float targetFrequency;
 } wav_pitch_user_data_t;
 
 
@@ -72,7 +74,7 @@ unsigned int getPitchMarkOffset(circular_buffer<SAMPLE> & samples, unsigned int 
 unsigned int getOutputWindowCenter(int window_index, unsigned int offset, float window_length, float stretch);
 
 
-/*
+
 bool scale[OCTAVE_SUBDIVISION] =
         {
             true,   // I
@@ -80,15 +82,14 @@ bool scale[OCTAVE_SUBDIVISION] =
             true,   // II
             false,  // IIIb
             true,   // III
-            true,   // IV
-            false,  // IV#/Vb
-            true,   // V
-            false,  // V#/VIb
-            true,   // VI
-            false,  // VIIb
-            true    // VII
+            false,  // IV
+            true,   // IV#/Vb
+            false,  // V
+            true,   // V#/VIb
+            false,  // VI
+            true,   // VIIb
+            false   // VII
         };
-*/
 
 float scale_fund_freq = C_FREQ;
 
@@ -117,19 +118,18 @@ static int wav_pitch_Callback( const void *inputBuffer, void *outputBuffer,
     }
     else
     {
-//        for (unsigned int i = 0; i < framesPerBuffer; i++)
-//        {
-//            *out++ = *in++;  /* left */
-//            *out++ = *in++;  /* right */
-//        }
+
+//Push samples to buffer. If real time, use portaudio buffer for source. Else, use user defined buffer.
+// Only push samples between -1 and 1
         for (int i = 0; i < framesPerBuffer; ++i)
         {
-            // Only push samples between -1 and 1
             (int)(*in) ? ud->samples_in_left.push_back(0.0) : ud->samples_in_left.push_back(*in);
             in++;
             (int)(*in) ? ud->samples_in_right.push_back(0.0) : ud->samples_in_right.push_back(*in);
             in++;
         }
+
+
         if (ud->isFirstTime)
         {
             for (int i = 0; i < framesPerBuffer; ++i)
@@ -141,6 +141,7 @@ static int wav_pitch_Callback( const void *inputBuffer, void *outputBuffer,
         }
         else
         {
+
             if(ud->samples_out_left.size() >= framesPerBuffer) // If stored, dump previous callback output
             {
                 for (int i = 0; i < framesPerBuffer; ++i)
@@ -153,22 +154,18 @@ static int wav_pitch_Callback( const void *inputBuffer, void *outputBuffer,
                 }
             }
 
-            //TODO: menos distorsion con frecuencias mas chicas porque implica ventanas mas grandes
             float originalFundF = getFundamentalFrequency(ud->samples_in_left, framesPerBuffer);
             float targetFundF = 0.0f;
             if (originalFundF != NAN)
             {
-                targetFundF = originalFundF * ud->stretch; //getTargetFundamentalFrequency(originalFundF);
+                targetFundF = getTargetFundamentalFrequency(originalFundF);//originalFundF * ud->stretch;
                 stretch(ud->samples_out_left , ud->samples_in_left , framesPerBuffer, originalFundF, targetFundF);
                 stretch(ud->samples_out_right, ud->samples_in_right, framesPerBuffer, originalFundF, targetFundF);
             }
 
             for (int i = 0; i < framesPerBuffer; ++i)
             {
-                float sample_out = ud->samples_out_left[i];
-                float sample_in = ud->samples_in_left[i];
-                float dis = sample_in - sample_out;
-                *out++ = ud->samples_in_left[i];
+                *out++ = (ud->samples_out_left[i] + ud->samples_out_left[i+1])/2;
                 *out++ = ud->samples_out_right[i];
             }
 
@@ -186,6 +183,7 @@ static int wav_pitch_Callback( const void *inputBuffer, void *outputBuffer,
 
 PaError set_wav_pitch_cb(PaStream*& stream, PaStreamParameters& inputParameters, PaStreamParameters& outputParameters, PaError& err)
 {
+
     circular_buffer<SAMPLE> samples_in_left;
     circular_buffer<SAMPLE> samples_in_right;
     circular_buffer<SAMPLE> samples_out_left;
@@ -197,7 +195,8 @@ PaError set_wav_pitch_cb(PaStream*& stream, PaStreamParameters& inputParameters,
     samples_out_left.reserve(2*FRAMES_PER_BUFFER);
     samples_out_right.reserve(2*FRAMES_PER_BUFFER);
 
-    for (int i = 0; i < 2*FRAMES_PER_BUFFER; ++i) {
+    for (int i = 0; i < 2*FRAMES_PER_BUFFER; ++i)
+    {
         samples_out_left.push_back(0.0);
         samples_out_right.push_back(0.0);
     }
@@ -205,7 +204,69 @@ PaError set_wav_pitch_cb(PaStream*& stream, PaStreamParameters& inputParameters,
     int stretch_exponent = 0;
     float stretch = pow(2,stretch_exponent);
 
-    wav_pitch_user_data_t userdata = {samples_in_left, samples_in_right,samples_out_left, samples_out_right, true, stretch};
+    wav_pitch_user_data_t userdata =
+            {
+                samples_in_left,
+                samples_in_right,
+                samples_out_left,
+                samples_out_right,
+                true,
+                stretch
+            };
+
+
+#ifdef USE_WAV
+    AudioFile<float> wav_manager;
+    std::string file_name(WAV_FILE);
+    file_name += WAV_EXTENSION;
+
+    wav_manager.load(file_name.c_str());
+    wav_manager.printSummary();
+
+    int n_samples = wav_manager.getNumSamplesPerChannel();
+
+
+    float * output_samples = new float[2*n_samples];
+    float * input_samples = new float[2*n_samples];
+    float * input_samples_aux = input_samples;
+
+    //Load input samples in callback-friendly buffer format
+    for(int i = 0; i < n_samples; i++)
+    {
+        *input_samples_aux++ = wav_manager.samples[0][i];
+        *input_samples_aux++ = wav_manager.samples[1][i];
+    }
+
+    PaStreamCallbackFlags statusFlags;
+
+    for( int i = 0; i < n_samples / FRAMES_PER_BUFFER; i++)
+    {
+        wav_pitch_Callback( (const void *)(input_samples + i * 2 * FRAMES_PER_BUFFER),
+                            output_samples + i * 2 * FRAMES_PER_BUFFER,
+                            FRAMES_PER_BUFFER,
+                            nullptr,
+                            statusFlags,
+                            (void*)(&userdata));
+//        cout << i << "    " << *(output_samples + i * 2 * FRAMES_PER_BUFFER) << endl;
+    }
+    for( int i = 0; i < n_samples; i++)
+    {
+        wav_manager.samples[0][i] = *output_samples++;
+        wav_manager.samples[1][i] = *output_samples++;
+//        if( ! (i % FRAMES_PER_BUFFER))
+//            cout << i/FRAMES_PER_BUFFER << "    " << *output_samples << endl;
+    }
+
+    file_name = std::string(WAV_FILE);
+    file_name += "_out";
+    file_name += WAV_EXTENSION;
+
+    wav_manager.save(file_name.c_str());
+    delete output_samples;
+
+#else
+
+
 
     char control = 0;
 
@@ -221,26 +282,10 @@ PaError set_wav_pitch_cb(PaStream*& stream, PaStreamParameters& inputParameters,
     if( err == paNoError )
     {
         err = Pa_StartStream( stream );
-        if(err == paNoError)
-        {
-            printf("Hit ENTER to stop program.\n");
-            while(control != 'e') //TODO:
-            {
-                cin >> control;
-                if(control == 'r' || control == 'R')
-                {
-                    stretch_exponent++;
-                    stretch = pow(2,(float)stretch_exponent/12.0);
-                }
-                else if(control == 'l' || control == 'L')
-                {
-                    stretch_exponent--;
-                    stretch = pow(2,(float)stretch_exponent/12.0);
-                }
-            }
-        }
+        getchar();
     }
     return err;
+#endif
 }
 
 float getFundamentalFrequency(circular_buffer<SAMPLE>& samples, unsigned int n_samples)
@@ -249,7 +294,7 @@ float getFundamentalFrequency(circular_buffer<SAMPLE>& samples, unsigned int n_s
     float freq = NAN;
     float autocorrelation = NAN;
     //tau_min = fs/f_fund_max
-    for (int tau = 100; tau < n_samples - 300; ++tau)    //TODO: sacar magic number. si aumenta, no distingo frecuencias mas bajas pero es mas rapido y no se traba
+    for (int tau = 150; tau < 600; tau+=2)
     {
         autocorrelation = autocorrelation_v1(samples, n_samples, tau);
         if(autocorrelation > max_autocorrelation)
@@ -285,10 +330,32 @@ float autocorrelation_v2(circular_buffer<SAMPLE>& samples, unsigned int n_sample
 
 float getTargetFundamentalFrequency(float originalFundamentalFrequency)
 {
+    if(isnan(originalFundamentalFrequency))
+    {
+        return originalFundamentalFrequency;
+    }
     float aux = (log2f(originalFundamentalFrequency / FUND_FREQ));
     int octave = (int)aux;
     int note = (int)roundf(OCTAVE_SUBDIVISION*(aux-octave));  // note in octave (from 0 (fundamental) to OCTAVE_SUBDIVISION - 1)
-    return GET_FREQ(octave, 0);
+    if(!scale[note])
+    {
+        float dif = OCTAVE_SUBDIVISION*(aux-octave) - roundf(OCTAVE_SUBDIVISION*(aux-octave));
+        if( dif>0)  //to next allowed frequency
+        {
+            while (!scale[note])
+            {
+                note = ++note % OCTAVE_SUBDIVISION;
+                if(!note){octave++;};   //if note=0, octave has been increased
+            }
+        } else{    //to previous allowed frequency
+            while (!scale[note])
+            {
+                if(note) { note--; }  // if note is not first in octave
+                else{ note = OCTAVE_SUBDIVISION - 1; if(octave) {octave--;}};   //
+            }
+        }
+    }
+    return GET_FREQ(octave, note);
 }
 /*
 
@@ -336,9 +403,9 @@ void stretch(circular_buffer<SAMPLE> & samples_out, circular_buffer<SAMPLE> & sa
 {
     float window_length =  SAMPLE_RATE/originalFundamentalFrequency;
     unsigned int offset = getPitchMarkOffset(samples_in, (unsigned int)window_length);
-    int window_center_in = offset;
     float stretch = targetFundamentalFrequency/originalFundamentalFrequency;
     int window_center_out = getOutputWindowCenter(0, offset, window_length, stretch);
+    int window_center_in = offset;
 
 
     for(int i = 0, counter=0;   // i: samples_in. counter: samples_out.
@@ -346,30 +413,23 @@ void stretch(circular_buffer<SAMPLE> & samples_out, circular_buffer<SAMPLE> & sa
         window_center_out < n_samples + window_length;
         ++counter)
     {
+
+        i = round((float)(counter + 0.1) / stretch);
+
         window_center_in = offset + i * window_length / 2;
         window_center_out = getOutputWindowCenter(counter, offset, window_length, stretch);
 
-
-        for (int j = -window_length/2;
-             j <= window_length/2;
+        for (int j = -window_length/2.0/stretch;
+             j <= window_length/2.0/stretch;
              j++)
         {
-            if((window_center_in + j) >= 0 && (window_center_out + j) >=0)
+            if((window_center_in + j*stretch) >= 0 && (window_center_out + j) >=0)
             {
-                float hann = HANN_FACTOR(window_length, j);
-                unsigned int index = window_center_out + j;
-                float value = samples_in[index];
-                float stored = samples_out[index];
-                samples_out[index / stretch] += value*hann/stretch;
+                samples_out[window_center_out + j] += samples_in[window_center_in + j*stretch]*HANN_FACTOR(window_length, j*stretch);
             }
-        }
-//        if(counter % 2 == 0)
-        {
-            i = (int)((float)counter / stretch);
         }
     }
 }
-
 
 unsigned int getPitchMarkOffset(circular_buffer<SAMPLE> & samples, unsigned int tau)
 {

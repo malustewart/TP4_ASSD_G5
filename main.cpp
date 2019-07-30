@@ -1,26 +1,14 @@
 #include <iostream>
 #include <string>
-#include "AudioFile.h"
 #include "portaudio.h"
 #include "set_wav_pitch_cb.h"
 
-#define TEST_WAV "scream"
 
 #define PA_SAMPLE_TYPE  paFloat32
 
 using namespace std;
 
 int main() {
-
-/*
-    AudioFile<double> wav_manager;
-
-    string filepath("scream");
-    filepath = "../" + filepath + ".wav";
-
-    wav_manager.load(filepath);
-    wav_manager.printSummary();
-*/
 
 //******PORTAUDIO CONFIG***********//
     PaStreamParameters inputParameters, outputParameters;
