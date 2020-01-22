@@ -13,7 +13,7 @@
 #define SAMPLE_RATE         (44100)
 #define FRAMES_PER_BUFFER   (1000)
 
-#define USE_WAV
+//#define USE_WAV
 #define WAV_FILE "../sineSweep"  //Path relativo del archivo .wav SIN EXTENSION
 #define WAV_EXTENSION ".wav"
 
@@ -49,18 +49,22 @@
 #define HANN_FACTOR(length, position) (0.5*(1+cos(2*3.1415926*(position)/(length))))
 
 
+
 typedef float SAMPLE;
 
 using namespace std;
 
-typedef  struct
+
+
+
+typedef struct wav_pitch_user_data_t
 {
-    circular_buffer<SAMPLE>& samples_in_left;
-    circular_buffer<SAMPLE>& samples_in_right;
-    circular_buffer<SAMPLE>& samples_out_left;
-    circular_buffer<SAMPLE>& samples_out_right;
+    circular_buffer<SAMPLE> * samples_in_left;
+    circular_buffer<SAMPLE> * samples_in_right;
+    circular_buffer<SAMPLE> * samples_out_left;
+    circular_buffer<SAMPLE> * samples_out_right;
     bool isFirstTime;
-    float & stretch;
+    float stretch;
 } wav_pitch_user_data_t;
 
 
@@ -72,7 +76,6 @@ float autocorrelation_v1(circular_buffer<SAMPLE> &  samples, unsigned int n_samp
 float autocorrelation_v2(circular_buffer<SAMPLE> &  samples, unsigned int n_samples, unsigned int tau);
 unsigned int getPitchMarkOffset(circular_buffer<SAMPLE> & samples, unsigned int tau);
 unsigned int getOutputWindowCenter(int window_index, unsigned int offset, float window_length, float stretch);
-
 
 
 bool scale[OCTAVE_SUBDIVISION] =
@@ -92,6 +95,11 @@ bool scale[OCTAVE_SUBDIVISION] =
         };
 
 float scale_fund_freq = C_FREQ;
+
+
+
+
+
 
 static int wav_pitch_Callback( const void *inputBuffer, void *outputBuffer,
                                unsigned long framesPerBuffer,
@@ -123,9 +131,9 @@ static int wav_pitch_Callback( const void *inputBuffer, void *outputBuffer,
 // Only push samples between -1 and 1
         for (int i = 0; i < framesPerBuffer; ++i)
         {
-            (int)(*in) ? ud->samples_in_left.push_back(0.0) : ud->samples_in_left.push_back(*in);
+            (int)(*in) ? ud->samples_in_left->push_back(0.0) : ud->samples_in_left->push_back(*in);
             in++;
-            (int)(*in) ? ud->samples_in_right.push_back(0.0) : ud->samples_in_right.push_back(*in);
+            (int)(*in) ? ud->samples_in_right->push_back(0.0) : ud->samples_in_right->push_back(*in);
             in++;
         }
 
@@ -142,38 +150,38 @@ static int wav_pitch_Callback( const void *inputBuffer, void *outputBuffer,
         else
         {
 
-            if(ud->samples_out_left.size() >= framesPerBuffer) // If stored, dump previous callback output
+            if(ud->samples_out_left->size() >= framesPerBuffer) // If stored, dump previous callback output
             {
                 for (int i = 0; i < framesPerBuffer; ++i)
                 {
-                    ud->samples_out_left.pop_front();
-                    ud->samples_out_left.push_back(0.0);
-                    ud->samples_out_right.pop_front();
-                    ud->samples_out_right.push_back(0.0);
+                    ud->samples_out_left->pop_front();
+                    ud->samples_out_left->push_back(0.0);
+                    ud->samples_out_right->pop_front();
+                    ud->samples_out_right->push_back(0.0);
 
                 }
             }
 
-            float originalFundF = getFundamentalFrequency(ud->samples_in_left, framesPerBuffer);
+            float originalFundF = getFundamentalFrequency(*(ud->samples_in_left), framesPerBuffer);
             float targetFundF = 0.0f;
             if (originalFundF != NAN)
             {
                 targetFundF = getTargetFundamentalFrequency(originalFundF);//originalFundF * ud->stretch;
-                stretch(ud->samples_out_left , ud->samples_in_left , framesPerBuffer, originalFundF, targetFundF);
-                stretch(ud->samples_out_right, ud->samples_in_right, framesPerBuffer, originalFundF, targetFundF);
+                stretch(*(ud->samples_out_left) , *(ud->samples_in_left) , framesPerBuffer, originalFundF, targetFundF);
+                stretch(*(ud->samples_out_right), *(ud->samples_in_right), framesPerBuffer, originalFundF, targetFundF);
             }
 
             for (int i = 0; i < framesPerBuffer; ++i)
             {
-                *out++ = (ud->samples_out_left[i] + ud->samples_out_left[i+1])/2;
-                *out++ = ud->samples_out_right[i];
+                *out++ = ((*ud->samples_out_left)[i] + (*ud->samples_out_left)[i+1])/2;
+                *out++ = (*ud->samples_out_right)[i];
             }
 
             //Dump this callback's input
             for (int i = 0; i < framesPerBuffer; ++i)
             {
-                ud->samples_in_left.pop_front();
-                ud->samples_in_right.pop_front();
+                ud->samples_in_left->pop_front();
+                ud->samples_in_right->pop_front();
             }
         }
     }
@@ -183,37 +191,31 @@ static int wav_pitch_Callback( const void *inputBuffer, void *outputBuffer,
 
 PaError set_wav_pitch_cb(PaStream*& stream, PaStreamParameters& inputParameters, PaStreamParameters& outputParameters, PaError& err)
 {
+	circular_buffer<SAMPLE> * samples_in_left = new circular_buffer<SAMPLE>;
+	circular_buffer<SAMPLE> * samples_in_right = new circular_buffer<SAMPLE>;
+	circular_buffer<SAMPLE> * samples_out_left = new circular_buffer<SAMPLE>;
+	circular_buffer<SAMPLE> * samples_out_right = new circular_buffer<SAMPLE>;
 
-    circular_buffer<SAMPLE> samples_in_left;
-    circular_buffer<SAMPLE> samples_in_right;
-    circular_buffer<SAMPLE> samples_out_left;
-    circular_buffer<SAMPLE> samples_out_right;
-
-
-    samples_in_left.reserve(2*FRAMES_PER_BUFFER);
-    samples_in_right.reserve(2*FRAMES_PER_BUFFER);
-    samples_out_left.reserve(2*FRAMES_PER_BUFFER);
-    samples_out_right.reserve(2*FRAMES_PER_BUFFER);
+    samples_in_left->reserve(2 * FRAMES_PER_BUFFER);
+    samples_in_right->reserve(2 * FRAMES_PER_BUFFER);
+    samples_out_left->reserve(2 * FRAMES_PER_BUFFER);
+    samples_out_right->reserve(2 * FRAMES_PER_BUFFER);
 
     for (int i = 0; i < 2*FRAMES_PER_BUFFER; ++i)
     {
-        samples_out_left.push_back(0.0);
-        samples_out_right.push_back(0.0);
+        samples_out_left->push_back(0.0);
+        samples_out_right->push_back(0.0);
     }
 
     int stretch_exponent = 0;
-    float stretch = pow(2,stretch_exponent);
+	float stretch = pow(2, stretch_exponent);
 
-    wav_pitch_user_data_t userdata =
-            {
-                samples_in_left,
-                samples_in_right,
-                samples_out_left,
-                samples_out_right,
-                true,
-                stretch
-            };
-
+	wav_pitch_user_data_t * userdata = new wav_pitch_user_data_t;
+	
+	userdata->samples_in_left = samples_in_left;
+	userdata->samples_in_right = samples_in_right;
+	userdata->samples_out_left = samples_out_left;
+	userdata->samples_out_right = samples_out_right;
 
 #ifdef USE_WAV
     AudioFile<float> wav_manager;
@@ -237,7 +239,7 @@ PaError set_wav_pitch_cb(PaStream*& stream, PaStreamParameters& inputParameters,
         *input_samples_aux++ = wav_manager.samples[1][i];
     }
 
-    PaStreamCallbackFlags statusFlags;
+    PaStreamCallbackFlags statusFlags = 0;
 
     for( int i = 0; i < n_samples / FRAMES_PER_BUFFER; i++)
     {
@@ -263,10 +265,7 @@ PaError set_wav_pitch_cb(PaStream*& stream, PaStreamParameters& inputParameters,
 
     wav_manager.save(file_name.c_str());
     delete output_samples;
-
 #else
-
-
 
     char control = 0;
 
@@ -278,14 +277,15 @@ PaError set_wav_pitch_cb(PaStream*& stream, PaStreamParameters& inputParameters,
             FRAMES_PER_BUFFER,
             0, /* paClipOff, */  /* we won't output out of range samples so don't bother clipping them */
             wav_pitch_Callback,
-            (void *) &userdata );
+            (void *) userdata );
     if( err == paNoError )
     {
         err = Pa_StartStream( stream );
-        getchar();
+ //       getchar();
     }
-    return err;
 #endif
+
+	return err;
 }
 
 float getFundamentalFrequency(circular_buffer<SAMPLE>& samples, unsigned int n_samples)
