@@ -118,9 +118,11 @@ int main() {
 		ImGui::NewFrame();
 
 		ImGui::Text("HOLA");
+		ImGui::ShowDemoWindow();
 
 		// Rendering
 		ImGui::Render();
+		al_clear_to_color({ 0.0f, 0.0f, 0.0f, 0.0f });
 		ImGui_ImplAllegro5_RenderDrawData(ImGui::GetDrawData());
 		al_flip_display();
 	}
