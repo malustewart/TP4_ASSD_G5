@@ -408,16 +408,16 @@ void stretch(circular_buffer<SAMPLE> & samples_out, circular_buffer<SAMPLE> & sa
     int window_center_in = offset;
 
 
-    for(int i = 0, counter=0;   // i: samples_in. counter: samples_out.
+    //todo: por que arranca en cero y no -1? es porque ya lo cubre el extra del callback pasado?
+    for(int window_in_index = 0, window_out_index=0;   // window_in_index: samples_in. window_out_index: samples_out.
 //        window_center_out <= n_samples;
         window_center_out < n_samples + window_length;
-        ++counter)
+        ++window_out_index)
     {
+        window_in_index = round((float)(window_out_index + 0.1) / stretch); //todo: por que round y no casteo a int?
 
-        i = round((float)(counter + 0.1) / stretch);
-
-        window_center_in = offset + i * window_length / 2;
-        window_center_out = getOutputWindowCenter(counter, offset, window_length, stretch);
+        window_center_in = offset + window_in_index * window_length / 2;
+        window_center_out = getOutputWindowCenter(window_out_index, offset, window_length, stretch);
 
         for (int j = -window_length/2.0/stretch;
              j <= window_length/2.0/stretch;
@@ -450,3 +450,5 @@ unsigned int getOutputWindowCenter(int window_index, unsigned int offset, float 
 {
     return (unsigned int)((offset + window_index * window_length / 2)/stretch);
 }
+
+
