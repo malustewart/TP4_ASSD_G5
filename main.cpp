@@ -116,9 +116,87 @@ int main() {
 		// Start the Dear ImGui frame
 		ImGui_ImplAllegro5_NewFrame();
 		ImGui::NewFrame();
+        ImGui::SetWindowFontScale(5);
+		ImGui::Text("SELECT A MODE:  ");
+        const char* items[] = { "REAL TIME", "AUDIO RECORDING" };
+        static const char* current_item = NULL;
+        ImGui::SetNextItemWidth(650);
+        ImGui::SameLine();
+        if (ImGui::BeginCombo("##mode", current_item)) // The second parameter is the label previewed before opening the combo.
+        {
+            for (int n = 0; n < IM_ARRAYSIZE(items); n++)
+            {
+                bool is_selected = (current_item == items[n]); // You can store your selection however you want, outside or inside your objects
+                if (ImGui::Selectable(items[n], is_selected))
+                    current_item = items[n];
+                if (is_selected)
+                    ImGui::SetItemDefaultFocus();   // You may set the initial focus when opening the combo (scrolling + for keyboard navigation support)
+            }
+            ImGui::EndCombo();
+           
+        }
 
-		ImGui::Text("HOLA");
+       
+        if (current_item == "AUDIO RECORDING")
+        {   
+            static char wav [30] = "Insert here";
+            ImGui::SameLine();
+            ImGui::SetNextItemWidth(400);
+            ImGui::SetCursorPosX(ImGui::GetCursorPosX() + 100);
+            ImGui::InputText(".wav   ", wav, 30, ImGuiInputTextFlags_CharsNoBlank);
+        }
+        ImGui::Spacing();
+
+        static bool do_ = false;
+        static bool re_ = false;
+        static bool mi_ = false;
+        static bool fa_ = false;
+        static bool sol_ = false;
+        static bool la_ = false;
+        static bool si_ = false;
+
+
+        if (ImGui::CollapsingHeader("CHARACTERISTICS"))
+        {
+            ImGui::Columns(2);//, "mixed");
+            ImGui::Separator();
+
+            ImGui::SetCursorPosX(ImGui::GetCursorPosX() + (ImGui::GetWindowWidth() / 5));
+            ImGui::Text("SELECT SCALE");
+            ImGui::SetCursorPosX(ImGui::GetCursorPosX() + (ImGui::GetWindowWidth() / 4));
+            ImGui::Checkbox("DO", &do_); ImGui::SetCursorPosX(ImGui::GetCursorPosX() + (ImGui::GetWindowWidth() / 4));
+            ImGui::Checkbox("RE", &re_); ImGui::SetCursorPosX(ImGui::GetCursorPosX() + (ImGui::GetWindowWidth() / 4));
+            ImGui::Checkbox("MI", &mi_); ImGui::SetCursorPosX(ImGui::GetCursorPosX() + (ImGui::GetWindowWidth() / 4));
+            ImGui::Checkbox("FA", &fa_); ImGui::SetCursorPosX(ImGui::GetCursorPosX() + (ImGui::GetWindowWidth() / 4));
+            ImGui::Checkbox("SOL", &sol_); ImGui::SetCursorPosX(ImGui::GetCursorPosX() + (ImGui::GetWindowWidth() / 4));
+            ImGui::Checkbox("LA", &la_); ImGui::SetCursorPosX(ImGui::GetCursorPosX() + (ImGui::GetWindowWidth() / 4));
+            ImGui::Checkbox("SI", &si_); ImGui::SetCursorPosX(ImGui::GetCursorPosX() + (ImGui::GetWindowWidth() / 4));
+            ImGui::NextColumn();
+
+            ImGui::SetCursorPosX(ImGui::GetCursorPosX() + (ImGui::GetWindowWidth() / 5));
+            ImGui::Text("SELECT TONE");
+            static int int_value = 0;
+            ImGui::SetCursorPosX(ImGui::GetCursorPosX() + (ImGui::GetWindowWidth() / 4));
+            ImGui::VSliderInt("##int", ImVec2(100, 550), &int_value, -12, 12);
+            ImGui::NextColumn();
+
+            ImGui::Columns(1);
+            ImGui::Separator();
+
+
+        }
+        ImGui::SetNextItemWidth(400);
+        ImGui::SetCursorPosX(ImGui::GetCursorPosX() + (ImGui::GetWindowWidth()/2) - 100);
+        if (ImGui::Button("Select"))
+        {
+             
+        }
+
+
+
+
 		ImGui::ShowDemoWindow();
+       
 
 		// Rendering
 		ImGui::Render();
