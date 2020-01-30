@@ -10,6 +10,8 @@
 #include "imgui.h"
 #include "imgui_impl_allegro5.h"
 
+#include <fstream>
+
 #define PA_SAMPLE_TYPE  paFloat32
 
 using namespace std;
@@ -88,8 +90,10 @@ int main() {
 	bool running = true;
 
 
+    const char* filename = "detectecFrec.bin";
+    ofstream datafile(filename, ios::binary | ios::out);
 
-	err = set_wav_pitch_cb(stream, inputParameters, outputParameters, err);
+	err = set_wav_pitch_cb(stream, inputParameters, outputParameters, err, &datafile);
 
 
 	while (running)
@@ -228,7 +232,7 @@ int main() {
             }
 
         }
-		ImGui::ShowDemoWindow();
+		//ImGui::ShowDemoWindow();
        
 
 		// Rendering
@@ -239,10 +243,11 @@ int main() {
 	}
 
 
+    datafile.close();
 
     if(err == paNoError)
     {
-        err = Pa_CloseStream( stream );
+        err = Pa_CloseStream( stream ); //todo: no llamar a esto si nunca se abrio el stream, por ejemplo en modo wav
     }
     if( err == paNoError )
     {
@@ -256,6 +261,9 @@ int main() {
         fprintf( stderr, "Error number: %d\n", err );
         fprintf( stderr, "Error message: %s\n", Pa_GetErrorText( err ) );
     }
+    
+
+
 
     return 0;
 

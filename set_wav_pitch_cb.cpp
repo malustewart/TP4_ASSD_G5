@@ -7,14 +7,14 @@
 #include "AudioFile.h"
 #include <stdio.h>
 #include <math.h>
-#include <iostream>
+#include <fstream>
 #include <vector>
 
-#define SAMPLE_RATE         (44100)
+#define SAMPLE_RATE         (8100)
 #define FRAMES_PER_BUFFER   (1000)
 
-//#define USE_WAV
-#define WAV_FILE "../sineSweep"  //Path relativo del archivo .wav SIN EXTENSION
+#define USE_WAV
+#define WAV_FILE "C:/Users/User/Desktop/voice_sweep_kike"  //Path relativo del archivo .wav SIN EXTENSION
 #define WAV_EXTENSION ".wav"
 
 
@@ -63,6 +63,7 @@ typedef struct wav_pitch_user_data_t
     circular_buffer<SAMPLE> * samples_in_right;
     circular_buffer<SAMPLE> * samples_out_left;
     circular_buffer<SAMPLE> * samples_out_right;
+    ofstream * datafile;
     bool isFirstTime;
     float stretch;
 } wav_pitch_user_data_t;
@@ -163,8 +164,10 @@ static int wav_pitch_Callback( const void *inputBuffer, void *outputBuffer,
             }
 
             float originalFundF = getFundamentalFrequency(*(ud->samples_in_left), framesPerBuffer);
+            int originalFundF_int = (int)originalFundF;
+            ud->datafile->write((char*)&originalFundF_int, sizeof(int));
             float targetFundF = 0.0f;
-            if (originalFundF != NAN)
+            if (!isnan(originalFundF))
             {
                 targetFundF = getTargetFundamentalFrequency(originalFundF);//originalFundF * ud->stretch;
                 stretch(*(ud->samples_out_left) , *(ud->samples_in_left) , framesPerBuffer, originalFundF, targetFundF);
@@ -189,7 +192,7 @@ static int wav_pitch_Callback( const void *inputBuffer, void *outputBuffer,
 }
 
 
-PaError set_wav_pitch_cb(PaStream*& stream, PaStreamParameters& inputParameters, PaStreamParameters& outputParameters, PaError& err)
+PaError set_wav_pitch_cb(PaStream*& stream, PaStreamParameters& inputParameters, PaStreamParameters& outputParameters, PaError& err, ofstream* dataFile = nullptr)
 {
 	circular_buffer<SAMPLE> * samples_in_left = new circular_buffer<SAMPLE>;
 	circular_buffer<SAMPLE> * samples_in_right = new circular_buffer<SAMPLE>;
@@ -216,6 +219,7 @@ PaError set_wav_pitch_cb(PaStream*& stream, PaStreamParameters& inputParameters,
 	userdata->samples_in_right = samples_in_right;
 	userdata->samples_out_left = samples_out_left;
 	userdata->samples_out_right = samples_out_right;
+    userdata->datafile = dataFile;
 
 #ifdef USE_WAV
     AudioFile<float> wav_manager;
@@ -231,6 +235,9 @@ PaError set_wav_pitch_cb(PaStream*& stream, PaStreamParameters& inputParameters,
     float * output_samples = new float[2*n_samples];
     float * input_samples = new float[2*n_samples];
     float * input_samples_aux = input_samples;
+    float * output_samples_aux = output_samples;
+
+
 
     //Load input samples in callback-friendly buffer format
     for(int i = 0; i < n_samples; i++)
@@ -248,13 +255,12 @@ PaError set_wav_pitch_cb(PaStream*& stream, PaStreamParameters& inputParameters,
                             FRAMES_PER_BUFFER,
                             nullptr,
                             statusFlags,
-                            (void*)(&userdata));
-//        cout << i << "    " << *(output_samples + i * 2 * FRAMES_PER_BUFFER) << endl;
+                            (void*)(userdata));
     }
     for( int i = 0; i < n_samples; i++)
     {
-        wav_manager.samples[0][i] = *output_samples++;
-        wav_manager.samples[1][i] = *output_samples++;
+        wav_manager.samples[0][i] = *output_samples_aux++;
+        wav_manager.samples[1][i] = *output_samples_aux++;
 //        if( ! (i % FRAMES_PER_BUFFER))
 //            cout << i/FRAMES_PER_BUFFER << "    " << *output_samples << endl;
     }
@@ -399,6 +405,7 @@ void stretch(circular_buffer<SAMPLE> & samples_out, circular_buffer<SAMPLE> & sa
 
 */
 
+//todo: check for nan
 void stretch(circular_buffer<SAMPLE> & samples_out, circular_buffer<SAMPLE> & samples_in, unsigned int n_samples, float originalFundamentalFrequency, float targetFundamentalFrequency)
 {
     float window_length =  SAMPLE_RATE/originalFundamentalFrequency;
