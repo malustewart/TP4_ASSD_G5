@@ -232,8 +232,8 @@ PaError set_wav_pitch_cb(PaStream*& stream, PaStreamParameters& inputParameters,
     int n_samples = wav_manager.getNumSamplesPerChannel();
 
 
-    float * output_samples = new float[2*n_samples];
-    float * input_samples = new float[2*n_samples];
+    float * output_samples = new float[2*n_samples + FRAMES_PER_BUFFER];
+    float * input_samples = new float[2*n_samples + FRAMES_PER_BUFFER];
     float * input_samples_aux = input_samples;
     float * output_samples_aux = output_samples;
 
@@ -248,10 +248,10 @@ PaError set_wav_pitch_cb(PaStream*& stream, PaStreamParameters& inputParameters,
 
     PaStreamCallbackFlags statusFlags = 0;
 
-    for( int i = 0; i < n_samples / FRAMES_PER_BUFFER; i++)
+    for( int i = 0; i < n_samples / (FRAMES_PER_BUFFER / 2); i++)
     {
-        wav_pitch_Callback( (const void *)(input_samples + i * 2 * FRAMES_PER_BUFFER),
-                            output_samples + i * 2 * FRAMES_PER_BUFFER,
+        wav_pitch_Callback( (const void *)(input_samples + i * FRAMES_PER_BUFFER),
+                            output_samples + i * FRAMES_PER_BUFFER,
                             FRAMES_PER_BUFFER,
                             nullptr,
                             statusFlags,
