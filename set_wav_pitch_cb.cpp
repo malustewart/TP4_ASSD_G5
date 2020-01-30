@@ -11,7 +11,7 @@
 #include <vector>
 
 #define SAMPLE_RATE         (8100)
-#define FRAMES_PER_BUFFER   (1000)
+#define FRAMES_PER_BUFFER   (1024)
 
 #define USE_WAV
 #define WAV_FILE "C:/Users/User/Desktop/voice_sweep_kike"  //Path relativo del archivo .wav SIN EXTENSION
@@ -306,7 +306,7 @@ float getFundamentalFrequency(circular_buffer<SAMPLE>& samples, unsigned int n_s
         if(autocorrelation > max_autocorrelation)
         {
             max_autocorrelation = autocorrelation;
-            freq = ((float)SAMPLE_RATE)/((float)tau);
+            freq = ((float)SAMPLE_RATE)/((float)tau);   //todo sacar del for
         }
     }
     return freq;
