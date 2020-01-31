@@ -90,8 +90,13 @@ int main() {
 	bool running = true;
 
 
-    const char* filename = "detectecFrec.bin";
-    ofstream datafile(filename, ios::binary | ios::out);
+#ifdef USE_WAV
+    std::string file_name(WAV_FILE);
+    file_name += ".bin";
+    ofstream datafile(file_name.c_str(), ios::binary | ios::out);
+#endif // USE_WAV
+
+
 
 	err = set_wav_pitch_cb(stream, inputParameters, outputParameters, err, &datafile);
 
@@ -242,8 +247,10 @@ int main() {
 		al_flip_display();
 	}
 
-
+#ifdef USE_WAV
     datafile.close();
+#else
+
 
     if(err == paNoError)
     {
@@ -262,6 +269,7 @@ int main() {
         fprintf( stderr, "Error message: %s\n", Pa_GetErrorText( err ) );
     }
     
+#endif // USE_WAV
 
 
 

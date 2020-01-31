@@ -10,14 +10,11 @@
 #include <fstream>
 #include <vector>
 
-#define SAMPLE_RATE         (8100)
+#define SAMPLE_RATE         (48000)
 #define FRAMES_PER_BUFFER   (1024)
 
-#define USE_WAV
-#define WAV_FILE "C:/Users/User/Desktop/voice_sweep_kike"  //Path relativo del archivo .wav SIN EXTENSION
-#define WAV_EXTENSION ".wav"
-
-
+#define FREC_FUND_MIN       (100)
+#define FREC_FUND_MAX       (700)
 
 #define GET_FREQ(o,n)       (FUND_FREQ * pow(2, ((float)(n) + OCTAVE_SUBDIVISION*(float)(octave))/OCTAVE_SUBDIVISION))
 
@@ -164,15 +161,17 @@ static int wav_pitch_Callback( const void *inputBuffer, void *outputBuffer,
             }
 
             float originalFundF = getFundamentalFrequency(*(ud->samples_in_left), framesPerBuffer);
-            int originalFundF_int = (int)originalFundF;
-            ud->datafile->write((char*)&originalFundF_int, sizeof(int));
+            int originalFundF_int = 0;
             float targetFundF = 0.0f;
             if (!isnan(originalFundF))
             {
+                originalFundF_int = (int)originalFundF;
                 targetFundF = getTargetFundamentalFrequency(originalFundF);//originalFundF * ud->stretch;
                 stretch(*(ud->samples_out_left) , *(ud->samples_in_left) , framesPerBuffer, originalFundF, targetFundF);
                 stretch(*(ud->samples_out_right), *(ud->samples_in_right), framesPerBuffer, originalFundF, targetFundF);
             }
+            ud->datafile->write((char*)&originalFundF_int, sizeof(int));
+
 
             for (int i = 0; i < framesPerBuffer; ++i)
             {
@@ -192,7 +191,11 @@ static int wav_pitch_Callback( const void *inputBuffer, void *outputBuffer,
 }
 
 
-PaError set_wav_pitch_cb(PaStream*& stream, PaStreamParameters& inputParameters, PaStreamParameters& outputParameters, PaError& err, ofstream* dataFile = nullptr)
+PaError set_wav_pitch_cb(PaStream*& stream, 
+                        PaStreamParameters& inputParameters, 
+                        PaStreamParameters& outputParameters, 
+                        PaError& err, 
+                        ofstream* dataFile = nullptr)
 {
 	circular_buffer<SAMPLE> * samples_in_left = new circular_buffer<SAMPLE>;
 	circular_buffer<SAMPLE> * samples_in_right = new circular_buffer<SAMPLE>;
@@ -294,22 +297,25 @@ PaError set_wav_pitch_cb(PaStream*& stream, PaStreamParameters& inputParameters,
 	return err;
 }
 
+//todo: hacer con SAMPLE * en vez de circular_buffer<SAMPLE>&
 float getFundamentalFrequency(circular_buffer<SAMPLE>& samples, unsigned int n_samples)
 {
     float max_autocorrelation = 0.0;
     float freq = NAN;
     float autocorrelation = NAN;
-    //tau_min = fs/f_fund_max
-    for (int tau = 150; tau < 600; tau+=2)
+    int tau_min = (double)SAMPLE_RATE / (double)FREC_FUND_MAX;
+    int tau_max = (double)SAMPLE_RATE / (double)FREC_FUND_MIN;
+    int current_best_tau = tau_min;
+    for (int tau = tau_min; tau < tau_max; tau++)
     {
-        autocorrelation = autocorrelation_v1(samples, n_samples, tau);
+        autocorrelation = autocorrelation_v2(samples, n_samples, tau);
         if(autocorrelation > max_autocorrelation)
         {
             max_autocorrelation = autocorrelation;
-            freq = ((float)SAMPLE_RATE)/((float)tau);   //todo sacar del for
+            current_best_tau = tau;
         }
     }
-    return freq;
+    return ((float)SAMPLE_RATE)/((float)current_best_tau);
 }
 
 float autocorrelation_v1(circular_buffer<SAMPLE>& samples, unsigned int n_samples, unsigned int tau)
