@@ -90,15 +90,14 @@ int main() {
 	bool running = true;
 
 
-#ifdef USE_WAV
-    std::string file_name(WAV_FILE);
-    file_name += ".bin";
-    ofstream datafile(file_name.c_str(), ios::binary | ios::out);
-#endif // USE_WAV
+	wav_pitch_user_data_t * userdata = create_user_data(get_frequency_by_autocorrelation_v2);
+	set_wav_user_data(userdata, WAV_FILE, "_freq", "_out", "_autocor_v2");
+	process_wav(userdata);
+	userdata = create_user_data(get_frequency_by_autocorrelation_v1);
+	set_wav_user_data(userdata, WAV_FILE, "_freq", "_out", "_autocor_v1");
+	process_wav(userdata);
 
-
-
-	err = set_wav_pitch_cb(stream, inputParameters, outputParameters, err, &datafile);
+	//	err = set_wav_pitch_cb(stream, inputParameters, outputParameters, err);
 
 
 	while (running)
@@ -247,9 +246,7 @@ int main() {
 		al_flip_display();
 	}
 
-#ifdef USE_WAV
-    datafile.close();
-#else
+#ifndef USE_WAV
 
 
     if(err == paNoError)

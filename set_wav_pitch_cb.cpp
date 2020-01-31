@@ -10,7 +10,7 @@
 #include <fstream>
 #include <vector>
 
-#define SAMPLE_RATE         (48000)
+#define SAMPLE_RATE         (44100)
 #define FRAMES_PER_BUFFER   (1024)
 
 #define FREC_FUND_MIN       (100)
@@ -45,14 +45,9 @@
 
 #define HANN_FACTOR(length, position) (0.5*(1+cos(2*3.1415926*(position)/(length))))
 
-
-
-typedef float SAMPLE;
-
 using namespace std;
 
-
-
+typedef float SAMPLE;
 
 typedef struct wav_pitch_user_data_t
 {
@@ -60,14 +55,39 @@ typedef struct wav_pitch_user_data_t
     circular_buffer<SAMPLE> * samples_in_right;
     circular_buffer<SAMPLE> * samples_out_left;
     circular_buffer<SAMPLE> * samples_out_right;
-    ofstream * datafile;
     bool isFirstTime;
-    float stretch;
+
+	freq_detector_t freq_detector;
+	bool is_real_time;
+	bool is_alvin;
+
+	/******************/
+	// FOR ALVIN
+	float stretch;
+
+	// FOR DUKI
+	//todo: scale o puntero a funcion que devuelva target fundamental frequency
+	
+	/******************/
+	// FOR NON REAL TIME
+	ofstream * datafile;
+	const char * wav_filename;
+	const char * out_suffix;
+	const char * bin_suffix;
+	const char * freq_det_suffix;
+
+	// FOR REAL TIME
+
+	/******************/
+
+
 } wav_pitch_user_data_t;
 
+typedef float(*autocorrelator_t)(circular_buffer<SAMPLE>& samples, unsigned int n_samples, unsigned int tau);
 
 
-float getFundamentalFrequency(circular_buffer<SAMPLE> & samples, unsigned int n_samples);
+
+float get_frequency_by_autocorrelation(circular_buffer<SAMPLE>& samples, unsigned int n_samples, autocorrelator_t autocorrelator);
 void stretch(circular_buffer<SAMPLE> & samples_out, circular_buffer<SAMPLE> & samples_in, unsigned int n_samples, float originalFundamentalFrequency, float targetFundamentalFrequency);
 float getTargetFundamentalFrequency(float originalFundamentalFrequency);
 float autocorrelation_v1(circular_buffer<SAMPLE> &  samples, unsigned int n_samples, unsigned int tau);
@@ -99,7 +119,7 @@ float scale_fund_freq = C_FREQ;
 
 
 
-static int wav_pitch_Callback( const void *inputBuffer, void *outputBuffer,
+static int process_window( const void *inputBuffer, void *outputBuffer,
                                unsigned long framesPerBuffer,
                                const PaStreamCallbackTimeInfo* timeInfo,
                                PaStreamCallbackFlags statusFlags,
@@ -160,7 +180,7 @@ static int wav_pitch_Callback( const void *inputBuffer, void *outputBuffer,
                 }
             }
 
-            float originalFundF = getFundamentalFrequency(*(ud->samples_in_left), framesPerBuffer);
+            float originalFundF = get_frequency_by_autocorrelation_v1(*(ud->samples_in_left), framesPerBuffer);
             int originalFundF_int = 0;
             float targetFundF = 0.0f;
             if (!isnan(originalFundF))
@@ -191,131 +211,256 @@ static int wav_pitch_Callback( const void *inputBuffer, void *outputBuffer,
 }
 
 
-PaError set_wav_pitch_cb(PaStream*& stream, 
-                        PaStreamParameters& inputParameters, 
-                        PaStreamParameters& outputParameters, 
-                        PaError& err, 
-                        ofstream* dataFile = nullptr)
+
+
+PaError set_wav_pitch_cb(PaStream*& stream,
+	PaStreamParameters& inputParameters,
+	PaStreamParameters& outputParameters,
+	PaError& err)
+{
+
+	wav_pitch_user_data_t * userdata = create_user_data();
+	set_wav_user_data(userdata, WAV_FILE, "_freq", "_out", "_v1");
+#ifdef USE_WAV
+	AudioFile<float> wav_manager;
+	std::string file_name(WAV_FILE);
+	file_name += WAV_EXTENSION;
+
+	wav_manager.load(file_name.c_str());
+	wav_manager.printSummary();
+
+	int n_samples = wav_manager.getNumSamplesPerChannel();
+
+
+	float * output_samples = new float[2 * n_samples + FRAMES_PER_BUFFER];
+	float * input_samples = new float[2 * n_samples + FRAMES_PER_BUFFER];
+	float * input_samples_aux = input_samples;
+	float * output_samples_aux = output_samples;
+
+
+
+	//Load input samples in callback-friendly buffer format
+	for (int i = 0; i < n_samples; i++)
+	{
+		*input_samples_aux++ = wav_manager.samples[0][i];
+		*input_samples_aux++ = wav_manager.samples[1][i];
+	}
+
+	PaStreamCallbackFlags statusFlags = 0;
+
+	// Process wav
+	for (int i = 0; i < n_samples / (FRAMES_PER_BUFFER / 2); i++)
+	{
+		process_window((const void *)(input_samples + i * FRAMES_PER_BUFFER),
+			output_samples + i * FRAMES_PER_BUFFER,
+			FRAMES_PER_BUFFER,
+			nullptr,
+			statusFlags,
+			(void*)(userdata));
+	}
+
+	// Store new wav
+	for (int i = 0; i < n_samples; i++)
+	{
+		wav_manager.samples[0][i] = *output_samples_aux++;
+		wav_manager.samples[1][i] = *output_samples_aux++;
+	}
+
+	file_name = std::string(userdata->wav_filename);
+	file_name += userdata->out_suffix;
+	file_name += userdata->freq_det_suffix;
+	file_name += WAV_EXTENSION;
+
+	wav_manager.save(file_name.c_str());
+	delete output_samples;
+	delete input_samples;
+#else
+
+	char control = 0;
+
+	err = Pa_OpenStream(
+		&stream,
+		&inputParameters,
+		&outputParameters,
+		SAMPLE_RATE,
+		FRAMES_PER_BUFFER,
+		0, /* paClipOff, */  /* we won't output out of range samples so don't bother clipping them */
+		process_window,
+		(void *)userdata);
+	if (err == paNoError)
+	{
+		err = Pa_StartStream(stream);
+		//       getchar();
+	}
+#endif
+
+	return err;
+}
+
+
+
+void process_wav(wav_pitch_user_data_t * userdata)
+{
+	AudioFile<float> wav_manager;
+	std::string file_name(userdata->wav_filename);
+	file_name += WAV_EXTENSION;
+
+	wav_manager.load(file_name.c_str());
+	wav_manager.printSummary();
+
+	int n_samples = wav_manager.getNumSamplesPerChannel();
+
+
+	float * output_samples = new float[2 * n_samples + FRAMES_PER_BUFFER];
+	float * input_samples = new float[2 * n_samples + FRAMES_PER_BUFFER];
+	float * input_samples_aux = input_samples;
+	float * output_samples_aux = output_samples;
+
+
+
+	//Load input samples
+	for (int i = 0; i < n_samples; i++)
+	{
+		*input_samples_aux++ = wav_manager.samples[0][i];
+		*input_samples_aux++ = wav_manager.samples[1][i];
+	}
+
+	// Process wav
+	PaStreamCallbackFlags statusFlags = 0;
+	for (int i = 0; i < n_samples / (FRAMES_PER_BUFFER / 2); i++)
+	{
+		process_window((const void *)(input_samples + i * FRAMES_PER_BUFFER),
+			output_samples + i * FRAMES_PER_BUFFER,
+			FRAMES_PER_BUFFER,
+			nullptr,
+			statusFlags,
+			(void*)(userdata));
+	}
+
+	// Store new wav
+	for (int i = 0; i < n_samples; i++)
+	{
+		wav_manager.samples[0][i] = *output_samples_aux++;
+		wav_manager.samples[1][i] = *output_samples_aux++;
+	}
+
+	file_name = std::string(userdata->wav_filename);
+	file_name += userdata->out_suffix;
+	file_name += userdata->freq_det_suffix;
+	file_name += WAV_EXTENSION;
+
+	wav_manager.save(file_name.c_str());
+	delete output_samples;
+	delete input_samples;
+	delete_user_data(userdata);
+}
+
+
+
+//todo: hacer con SAMPLE * en vez de circular_buffer<SAMPLE>&
+float get_frequency_by_autocorrelation_v2(circular_buffer<SAMPLE>& samples, unsigned int n_samples)
+{
+	return get_frequency_by_autocorrelation(samples, n_samples, autocorrelation_v2);
+}
+
+float get_frequency_by_autocorrelation_v1(circular_buffer<SAMPLE>& samples, unsigned int n_samples)
+{
+	return get_frequency_by_autocorrelation(samples, n_samples, autocorrelation_v1);
+}
+
+wav_pitch_user_data_t * create_user_data(freq_detector_t freq_detector)
 {
 	circular_buffer<SAMPLE> * samples_in_left = new circular_buffer<SAMPLE>;
 	circular_buffer<SAMPLE> * samples_in_right = new circular_buffer<SAMPLE>;
 	circular_buffer<SAMPLE> * samples_out_left = new circular_buffer<SAMPLE>;
 	circular_buffer<SAMPLE> * samples_out_right = new circular_buffer<SAMPLE>;
 
-    samples_in_left->reserve(2 * FRAMES_PER_BUFFER);
-    samples_in_right->reserve(2 * FRAMES_PER_BUFFER);
-    samples_out_left->reserve(2 * FRAMES_PER_BUFFER);
-    samples_out_right->reserve(2 * FRAMES_PER_BUFFER);
+	samples_in_left->reserve(2 * FRAMES_PER_BUFFER);
+	samples_in_right->reserve(2 * FRAMES_PER_BUFFER);
+	samples_out_left->reserve(2 * FRAMES_PER_BUFFER);
+	samples_out_right->reserve(2 * FRAMES_PER_BUFFER);
 
-    for (int i = 0; i < 2*FRAMES_PER_BUFFER; ++i)
-    {
-        samples_out_left->push_back(0.0);
-        samples_out_right->push_back(0.0);
-    }
-
-    int stretch_exponent = 0;
-	float stretch = pow(2, stretch_exponent);
+	for (int i = 0; i < 2 * FRAMES_PER_BUFFER; ++i)
+	{
+		samples_out_left->push_back(0.0);
+		samples_out_right->push_back(0.0);
+	}
 
 	wav_pitch_user_data_t * userdata = new wav_pitch_user_data_t;
-	
+
 	userdata->samples_in_left = samples_in_left;
 	userdata->samples_in_right = samples_in_right;
 	userdata->samples_out_left = samples_out_left;
 	userdata->samples_out_right = samples_out_right;
-    userdata->datafile = dataFile;
 
-#ifdef USE_WAV
-    AudioFile<float> wav_manager;
-    std::string file_name(WAV_FILE);
-    file_name += WAV_EXTENSION;
+	userdata->datafile = nullptr;
+	userdata->wav_filename = nullptr;
+	userdata->bin_suffix = nullptr;
+	userdata->out_suffix = nullptr;
 
-    wav_manager.load(file_name.c_str());
-    wav_manager.printSummary();
+	userdata->freq_detector = freq_detector;
+	userdata->isFirstTime = true;
 
-    int n_samples = wav_manager.getNumSamplesPerChannel();
+	userdata->is_alvin = true;	//por default
+	userdata->stretch = 1.0;	//por default
+	
+	userdata->is_real_time = true;
 
-
-    float * output_samples = new float[2*n_samples + FRAMES_PER_BUFFER];
-    float * input_samples = new float[2*n_samples + FRAMES_PER_BUFFER];
-    float * input_samples_aux = input_samples;
-    float * output_samples_aux = output_samples;
-
-
-
-    //Load input samples in callback-friendly buffer format
-    for(int i = 0; i < n_samples; i++)
-    {
-        *input_samples_aux++ = wav_manager.samples[0][i];
-        *input_samples_aux++ = wav_manager.samples[1][i];
-    }
-
-    PaStreamCallbackFlags statusFlags = 0;
-
-    for( int i = 0; i < n_samples / (FRAMES_PER_BUFFER / 2); i++)
-    {
-        wav_pitch_Callback( (const void *)(input_samples + i * FRAMES_PER_BUFFER),
-                            output_samples + i * FRAMES_PER_BUFFER,
-                            FRAMES_PER_BUFFER,
-                            nullptr,
-                            statusFlags,
-                            (void*)(userdata));
-    }
-    for( int i = 0; i < n_samples; i++)
-    {
-        wav_manager.samples[0][i] = *output_samples_aux++;
-        wav_manager.samples[1][i] = *output_samples_aux++;
-//        if( ! (i % FRAMES_PER_BUFFER))
-//            cout << i/FRAMES_PER_BUFFER << "    " << *output_samples << endl;
-    }
-
-    file_name = std::string(WAV_FILE);
-    file_name += "_out";
-    file_name += WAV_EXTENSION;
-
-    wav_manager.save(file_name.c_str());
-    delete output_samples;
-#else
-
-    char control = 0;
-
-    err = Pa_OpenStream(
-            &stream,
-            &inputParameters,
-            &outputParameters,
-            SAMPLE_RATE,
-            FRAMES_PER_BUFFER,
-            0, /* paClipOff, */  /* we won't output out of range samples so don't bother clipping them */
-            wav_pitch_Callback,
-            (void *) userdata );
-    if( err == paNoError )
-    {
-        err = Pa_StartStream( stream );
- //       getchar();
-    }
-#endif
-
-	return err;
+	return userdata;
 }
 
-//todo: hacer con SAMPLE * en vez de circular_buffer<SAMPLE>&
-float getFundamentalFrequency(circular_buffer<SAMPLE>& samples, unsigned int n_samples)
+wav_pitch_user_data_t * set_wav_user_data(wav_pitch_user_data_t * ud, const char * filename, const char * bin_suffix, const char * out_suffix, const char * freq_det_suffix)
 {
-    float max_autocorrelation = 0.0;
-    float freq = NAN;
-    float autocorrelation = NAN;
-    int tau_min = (double)SAMPLE_RATE / (double)FREC_FUND_MAX;
-    int tau_max = (double)SAMPLE_RATE / (double)FREC_FUND_MIN;
-    int current_best_tau = tau_min;
-    for (int tau = tau_min; tau < tau_max; tau++)
-    {
-        autocorrelation = autocorrelation_v2(samples, n_samples, tau);
-        if(autocorrelation > max_autocorrelation)
-        {
-            max_autocorrelation = autocorrelation;
-            current_best_tau = tau;
-        }
-    }
-    return ((float)SAMPLE_RATE)/((float)current_best_tau);
+	ud->bin_suffix = bin_suffix;
+	ud->out_suffix = out_suffix;
+	ud->wav_filename = filename;
+	ud->freq_det_suffix = freq_det_suffix;
+
+	std::string file_name(filename);
+	file_name += bin_suffix;
+	file_name += freq_det_suffix;
+	file_name += ".bin";
+
+	ud->datafile = new ofstream(file_name.c_str(), ios::binary | ios::out);
+
+	return ud;
+}
+
+void delete_user_data(wav_pitch_user_data_t * ud)
+{
+	if (ud->datafile) 
+	{ 
+		ud->datafile->close();
+		delete ud->datafile;
+	}
+	delete ud->samples_in_left;
+	delete ud->samples_in_right;
+	delete ud->samples_out_left;
+	delete ud->samples_out_right;
+
+	delete ud;
+
+	return;
+}
+
+float get_frequency_by_autocorrelation(circular_buffer<SAMPLE>& samples, unsigned int n_samples, autocorrelator_t autocorrelator)
+{
+	float max_autocorrelation = 0.0;
+	float freq = NAN;
+	float autocorrelation = NAN;
+	int tau_min = (double)SAMPLE_RATE / (double)FREC_FUND_MAX;
+	int tau_max = (double)SAMPLE_RATE / (double)FREC_FUND_MIN;
+	int current_best_tau = tau_min;
+	for (int tau = tau_min; tau < tau_max; tau++)
+	{
+		autocorrelation = autocorrelator(samples, n_samples, tau);
+		if (autocorrelation > max_autocorrelation)
+		{
+			max_autocorrelation = autocorrelation;
+			current_best_tau = tau;
+		}
+	}
+	return ((float)SAMPLE_RATE) / ((float)current_best_tau);
 }
 
 float autocorrelation_v1(circular_buffer<SAMPLE>& samples, unsigned int n_samples, unsigned int tau)
