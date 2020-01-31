@@ -89,7 +89,7 @@ typedef float(*autocorrelator_t)(circular_buffer<SAMPLE>& samples, unsigned int 
 
 float get_frequency_by_autocorrelation(circular_buffer<SAMPLE>& samples, unsigned int n_samples, autocorrelator_t autocorrelator);
 void stretch(circular_buffer<SAMPLE> & samples_out, circular_buffer<SAMPLE> & samples_in, unsigned int n_samples, float originalFundamentalFrequency, float targetFundamentalFrequency);
-float getTargetFundamentalFrequency(float originalFundamentalFrequency);
+float getTargetFundamentalFrequency(float originalFundamentalFrequency, wav_pitch_user_data_t * ud);
 float autocorrelation_v1(circular_buffer<SAMPLE> &  samples, unsigned int n_samples, unsigned int tau);
 float autocorrelation_v2(circular_buffer<SAMPLE> &  samples, unsigned int n_samples, unsigned int tau);
 unsigned int getPitchMarkOffset(circular_buffer<SAMPLE> & samples, unsigned int tau);
@@ -116,9 +116,6 @@ float scale_fund_freq = C_FREQ;
 
 
 
-
-
-
 static int process_window( const void *inputBuffer, void *outputBuffer,
                                unsigned long framesPerBuffer,
                                const PaStreamCallbackTimeInfo* timeInfo,
@@ -135,12 +132,11 @@ static int process_window( const void *inputBuffer, void *outputBuffer,
 
     if( inputBuffer == NULL )
     {
-        for( unsigned int i=0; i<framesPerBuffer; i++ )
+        for( unsigned int i=0; i < framesPerBuffer; i++ )
         {
             *out++ = 0;  /* left - silent */
             *out++ = 0;  /* right - silent */
         }
-//        gNumNoInputs += 1;
     }
     else
     {
@@ -186,7 +182,7 @@ static int process_window( const void *inputBuffer, void *outputBuffer,
             if (!isnan(originalFundF))
             {
                 originalFundF_int = (int)originalFundF;
-                targetFundF = getTargetFundamentalFrequency(originalFundF);//originalFundF * ud->stretch;
+                targetFundF = getTargetFundamentalFrequency(originalFundF, ud);
                 stretch(*(ud->samples_out_left) , *(ud->samples_in_left) , framesPerBuffer, originalFundF, targetFundF);
                 stretch(*(ud->samples_out_right), *(ud->samples_in_right), framesPerBuffer, originalFundF, targetFundF);
             }
@@ -310,13 +306,10 @@ void process_wav(wav_pitch_user_data_t * userdata)
 
 	int n_samples = wav_manager.getNumSamplesPerChannel();
 
-
 	float * output_samples = new float[2 * n_samples + FRAMES_PER_BUFFER];
 	float * input_samples = new float[2 * n_samples + FRAMES_PER_BUFFER];
 	float * input_samples_aux = input_samples;
 	float * output_samples_aux = output_samples;
-
-
 
 	//Load input samples
 	for (int i = 0; i < n_samples; i++)
@@ -354,8 +347,6 @@ void process_wav(wav_pitch_user_data_t * userdata)
 	delete input_samples;
 	delete_user_data(userdata);
 }
-
-
 
 //todo: hacer con SAMPLE * en vez de circular_buffer<SAMPLE>&
 float get_frequency_by_autocorrelation_v2(circular_buffer<SAMPLE>& samples, unsigned int n_samples)
@@ -426,6 +417,13 @@ wav_pitch_user_data_t * set_wav_user_data(wav_pitch_user_data_t * ud, const char
 	return ud;
 }
 
+wav_pitch_user_data_t * set_alvin_user_data(wav_pitch_user_data_t * ud, float stretch)
+{
+	ud->is_alvin = true;
+	ud->stretch = stretch;
+	return nullptr;
+}
+
 void delete_user_data(wav_pitch_user_data_t * ud)
 {
 	if (ud->datafile) 
@@ -485,16 +483,20 @@ float autocorrelation_v2(circular_buffer<SAMPLE>& samples, unsigned int n_sample
     return autocorrelation;
 }
 
-float getTargetFundamentalFrequency(float originalFundamentalFrequency)
+float getTargetFundamentalFrequency(float originalFundamentalFrequency, wav_pitch_user_data_t * ud)
 {
     if(isnan(originalFundamentalFrequency))
     {
         return originalFundamentalFrequency;
     }
+	if (ud->is_alvin)
+	{
+		return originalFundamentalFrequency * ud->stretch;
+	}
     float aux = (log2f(originalFundamentalFrequency / FUND_FREQ));
     int octave = (int)aux;
     int note = (int)roundf(OCTAVE_SUBDIVISION*(aux-octave));  // note in octave (from 0 (fundamental) to OCTAVE_SUBDIVISION - 1)
-    if(!scale[note])
+    if(!scale[note])	//todo: scale sacarlo de ud
     {
         float dif = OCTAVE_SUBDIVISION*(aux-octave) - roundf(OCTAVE_SUBDIVISION*(aux-octave));
         if( dif>0)  //to next allowed frequency
@@ -504,7 +506,7 @@ float getTargetFundamentalFrequency(float originalFundamentalFrequency)
                 note = ++note % OCTAVE_SUBDIVISION;
                 if(!note){octave++;};   //if note=0, octave has been increased
             }
-        } else{    //to previous allowed frequency
+        } else {    //to previous allowed frequency
             while (!scale[note])
             {
                 if(note) { note--; }  // if note is not first in octave
@@ -608,5 +610,3 @@ unsigned int getOutputWindowCenter(int window_index, unsigned int offset, float 
 {
     return (unsigned int)((offset + window_index * window_length / 2)/stretch);
 }
-
-
