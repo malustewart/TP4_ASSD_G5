@@ -11,7 +11,7 @@ allegro_settings_t gui_init(void)
 	al_init_image_addon();
 	al_set_new_display_flags(ALLEGRO_RESIZABLE);
 	allegro_settings_t all_settings;
-	all_settings.display = al_create_display(1280, 720);
+	all_settings.display = al_create_display(2100, 1000);
 	al_set_window_title(all_settings.display, "TP4 - ASSD - MALULA Y VALULA");
 	all_settings.queue = al_create_event_queue();
 	al_register_event_source(all_settings.queue, al_get_display_event_source(all_settings.display));
@@ -40,7 +40,7 @@ allegro_settings_t gui_init(void)
 
 bool create_window(allegro_settings_t all_settings, int size)
 {
-	bool running = true;
+	static bool running = true;
 	ALLEGRO_EVENT ev;
 	while (al_get_next_event(all_settings.queue, &ev))
 	{
@@ -57,6 +57,8 @@ bool create_window(allegro_settings_t all_settings, int size)
 
 	ImGui_ImplAllegro5_NewFrame();
 	ImGui::NewFrame();
+	ImGui::SetNextWindowSize(ImVec2(2000,800),ImGuiCond_Once);
+	ImGui::Begin("TP 4 ASSD MALULA Y VALULA", &running);
 	ImGui::SetWindowFontScale(size);
 
 	return running;
@@ -130,8 +132,8 @@ int select_factor(void)
 {
 	ImGui::Separator();
 	static int int_value = 0;
-	ImGui::SetCursorPosX(ImGui::GetCursorPosX() + (ImGui::GetWindowWidth() / 2));
-	ImGui::VSliderInt("##int", ImVec2(100, 550), &int_value, -12, 12);
+	ImGui::SetCursorPosX(ImGui::GetCursorPosX() + (ImGui::GetWindowWidth() / 2) - 150);
+	ImGui::VSliderInt("##int", ImVec2(300, 270), &int_value, -12, 12);
 	ImGui::Separator();
 	return int_value;
 }
@@ -258,6 +260,7 @@ void set_graphics(const char* foto)
 void end_gui(void)
 {
 	//ImGui::ShowDemoWindow();
+	ImGui::End();
 	ImGui::Render();
 	al_clear_to_color({ 0.0f, 0.0f, 0.0f, 0.0f });
 	ImGui_ImplAllegro5_RenderDrawData(ImGui::GetDrawData());

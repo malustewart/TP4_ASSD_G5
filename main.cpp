@@ -106,15 +106,13 @@ int main() {
  //               set_graphics("foto.PNG");
                 set_wav_user_data(userdata, wav, "_freq", "_out", "_autocor_v2");
                 process_wav(userdata);
-                while (1);
+                running = false;
             }
             else if (mode_selected == "REAL TIME")
             {
                 // todo: start stream
             }
         }
-
-        
 
         end_gui();
 	}
