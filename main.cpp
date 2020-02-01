@@ -3,12 +3,7 @@
 #include "portaudio.h"
 #include "set_wav_pitch_cb.h"
 
-#include <allegro5\allegro.h>
-#include <allegro5\allegro_primitives.h>
-#include <allegro5\allegro_image.h>
-
-#include "imgui.h"
-#include "imgui_impl_allegro5.h"
+#include "gui.h"
 
 #include <fstream>
 
@@ -58,192 +53,70 @@ int main() {
     }
 
 //******DEAR IMGUI CONFIG***********//
+     //inicializamos la parte grafica
+    allegro_settings_t all_settings = gui_init();
+    // main loop
+    bool running = true;
 
-	// Setup Allegro
-	al_init();
-	al_install_keyboard();
-	al_install_mouse();
-	al_init_primitives_addon();
-	al_init_image_addon();
-	al_set_new_display_flags(ALLEGRO_RESIZABLE);
-	ALLEGRO_DISPLAY* display = al_create_display(1280, 720);
-	al_set_window_title(display, "Dear ImGui Allegro 5 example");
-	ALLEGRO_EVENT_QUEUE* queue = al_create_event_queue();
-	al_register_event_source(queue, al_get_display_event_source(display));
-	al_register_event_source(queue, al_get_keyboard_event_source());
-	al_register_event_source(queue, al_get_mouse_event_source());
-
-	// Setup Dear ImGui context
-	IMGUI_CHECKVERSION();
-	ImGui::CreateContext();
-	ImGuiIO& io = ImGui::GetIO(); (void)io;
-	//io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;  // Enable Keyboard Controls
-
-	// Setup Dear ImGui style
-	ImGui::StyleColorsDark();
-	//ImGui::StyleColorsClassic();
-
-	// Setup Platform/Renderer bindings
-	ImGui_ImplAllegro5_Init(display);
-
-	// Main loop
-	bool running = true;
 
 
 	wav_pitch_user_data_t * userdata = create_user_data(get_frequency_by_autocorrelation_v2);
-	set_wav_user_data(userdata, WAV_FILE, "_freq", "_out", "_autocor_v2");
-	process_wav(userdata);
-	userdata = create_user_data(get_frequency_by_autocorrelation_v1);
-	set_wav_user_data(userdata, WAV_FILE, "_freq", "_out", "_autocor_v1");
-	process_wav(userdata);
+
 
 	//	err = set_wav_pitch_cb(stream, inputParameters, outputParameters, err);
 
 
 	while (running)
 	{
-		// Poll and handle events (inputs, window resize, etc.)
-		// You can read the io.WantCaptureMouse, io.WantCaptureKeyboard flags to tell if dear imgui wants to use your inputs.
-		// - When io.WantCaptureMouse is true, do not dispatch mouse input data to your main application.
-		// - When io.WantCaptureKeyboard is true, do not dispatch keyboard input data to your main application.
-		// Generally you may always pass all inputs to dear imgui, and hide them from your application based on those two flags.
-		ALLEGRO_EVENT ev;
-		while (al_get_next_event(queue, &ev))
-		{
-			ImGui_ImplAllegro5_ProcessEvent(&ev);
-			if (ev.type == ALLEGRO_EVENT_DISPLAY_CLOSE)
-				running = false;
-			if (ev.type == ALLEGRO_EVENT_DISPLAY_RESIZE)
-			{
-				ImGui_ImplAllegro5_InvalidateDeviceObjects();
-				al_acknowledge_resize(display);
-				ImGui_ImplAllegro5_CreateDeviceObjects();
-			}
-		}
-
-		// Start the Dear ImGui frame
-		ImGui_ImplAllegro5_NewFrame();
-		ImGui::NewFrame();
-        ImGui::SetWindowFontScale(5);
-		ImGui::Text("SELECT A MODE:  ");
-        const char* items[] = { "REAL TIME", "AUDIO RECORDING" };
-        static const char* current_item = NULL;
-        ImGui::SetNextItemWidth(650);
-        ImGui::SameLine();
-        if (ImGui::BeginCombo("##mode", current_item)) // The second parameter is the label previewed before opening the combo.
+        running = create_window(all_settings, 5); //el segundo parametro es el tamano de la letra 
+        const char* mode_selected = select_mode(); // AUDIO RECORDING & REAL TIME
+        static char* wav = NULL;
+        if (mode_selected == "AUDIO RECORDING")
         {
-            for (int n = 0; n < IM_ARRAYSIZE(items); n++)
+            wav = insert_wav();
+        }
+        const char* characteristic_selected = select_characteristic(); //CALVIN & DUKI
+
+        int selected_factor;
+        if (characteristic_selected == "CALVIN")
+        {
+            selected_factor = select_factor(); //devuelve int del -12 al 12
+        }
+        else if (characteristic_selected == "DUKI")
+        {
+            scale_t scale = select_scale();
+        }
+
+        bool data_enter = mode_selected != NULL && characteristic_selected != NULL;
+        bool config_done = confirm_data(data_enter);
+
+        if (config_done)
+        {
+            if (characteristic_selected == "CALVIN")
             {
-                bool is_selected = (current_item == items[n]); // You can store your selection however you want, outside or inside your objects
-                if (ImGui::Selectable(items[n], is_selected))
-                    current_item = items[n];
-                if (is_selected)
-                    ImGui::SetItemDefaultFocus();   // You may set the initial focus when opening the combo (scrolling + for keyboard navigation support)
-            }
-            ImGui::EndCombo();
-           
-        }
-
-       
-        if (current_item == "AUDIO RECORDING")
-        {   
-            static char wav [30] = "Insert here";
-            ImGui::SameLine();
-            ImGui::SetNextItemWidth(400);
-            ImGui::SetCursorPosX(ImGui::GetCursorPosX() + 100);
-            ImGui::InputText(".wav   ", wav, 30, ImGuiInputTextFlags_CharsNoBlank);
-        }
-        ImGui::Spacing();
-
-        static bool do_ = false;
-        static bool re_ = false;
-        static bool mi_ = false;
-        static bool fa_ = false;
-        static bool sol_ = false;
-        static bool la_ = false;
-        static bool si_ = false;
-
-
-        if (ImGui::CollapsingHeader("CHARACTERISTICS"))
-        {
-            ImGui::Columns(2);//, "mixed");
-            ImGui::Separator();
-
-            ImGui::SetCursorPosX(ImGui::GetCursorPosX() + (ImGui::GetWindowWidth() / 5));
-            ImGui::Text("SELECT SCALE");
-            ImGui::SetCursorPosX(ImGui::GetCursorPosX() + (ImGui::GetWindowWidth() / 4));
-            ImGui::Checkbox("DO", &do_); ImGui::SetCursorPosX(ImGui::GetCursorPosX() + (ImGui::GetWindowWidth() / 4));
-            ImGui::Checkbox("RE", &re_); ImGui::SetCursorPosX(ImGui::GetCursorPosX() + (ImGui::GetWindowWidth() / 4));
-            ImGui::Checkbox("MI", &mi_); ImGui::SetCursorPosX(ImGui::GetCursorPosX() + (ImGui::GetWindowWidth() / 4));
-            ImGui::Checkbox("FA", &fa_); ImGui::SetCursorPosX(ImGui::GetCursorPosX() + (ImGui::GetWindowWidth() / 4));
-            ImGui::Checkbox("SOL", &sol_); ImGui::SetCursorPosX(ImGui::GetCursorPosX() + (ImGui::GetWindowWidth() / 4));
-            ImGui::Checkbox("LA", &la_); ImGui::SetCursorPosX(ImGui::GetCursorPosX() + (ImGui::GetWindowWidth() / 4));
-            ImGui::Checkbox("SI", &si_); ImGui::SetCursorPosX(ImGui::GetCursorPosX() + (ImGui::GetWindowWidth() / 4));
-            ImGui::NextColumn();
-
-            ImGui::SetCursorPosX(ImGui::GetCursorPosX() + (ImGui::GetWindowWidth() / 5));
-            ImGui::Text("SELECT TONE");
-            static int int_value = 0;
-            ImGui::SetCursorPosX(ImGui::GetCursorPosX() + (ImGui::GetWindowWidth() / 4));
-            ImGui::VSliderInt("##int", ImVec2(100, 550), &int_value, -12, 12);
-            ImGui::NextColumn();
-
-            ImGui::Columns(1);
-            ImGui::Separator();
-
-
-        }
-        ImGui::SetNextItemWidth(400);
-        ImGui::SetCursorPosX(ImGui::GetCursorPosX() + (ImGui::GetWindowWidth()/2) - 100);
-        if (ImGui::Button("Select"))
-        {
-             
-        }
-
-        if (current_item == "AUDIO RECORDING")
-        {
-            if (ImGui::CollapsingHeader("GRAPHICS"))
+                set_alvin_user_data(userdata, selected_factor);
+            } 
+            else if (characteristic_selected == "DUKI")
             {
-                ImGui::Columns(2);//, "mixed");
-                ImGui::Separator();
-
-                ImGui::SetCursorPosX(ImGui::GetCursorPosX() + (ImGui::GetWindowWidth() / 5));
-                ImGui::Text("SPECTROGRAM");
-                ALLEGRO_BITMAP* image = NULL;
-                image = al_load_bitmap("foto.PNG");
-                ImGui::SetCursorPosX(ImGui::GetCursorPosX() + (ImGui::GetWindowWidth() / 5) - 300);
-                ImGui::Image(image, ImVec2(1000, 1000));
-
-
-                ImGui::NextColumn();
-                ImGui::SetCursorPosX(ImGui::GetCursorPosX() + (ImGui::GetWindowWidth() / 5));
-                ImGui::Text("HISTOGRAM");
-                static float arr[] = { 0.1f,0.1f, 0.7f, 0.05f, 0.05f};
-                ImGui::SetCursorPosX(ImGui::GetCursorPosX() + 300);
-                ImGui::PlotHistogram("##Histogram", arr, IM_ARRAYSIZE(arr), 0, "", 0.0f, 1.0f, ImVec2(1000, 1000));
-                ImGui::SetCursorPosX(ImGui::GetCursorPosX() + 350);
-                ImGui::Text("-2"); ImGui::SameLine(); ImGui::SetCursorPosX(ImGui::GetCursorPosX() + 150);
-                ImGui::Text("-1"); ImGui::SameLine(); ImGui::SetCursorPosX(ImGui::GetCursorPosX() + 150);
-                ImGui::Text("0"); ImGui::SameLine(); ImGui::SetCursorPosX(ImGui::GetCursorPosX() + 150);
-                ImGui::Text("+1"); ImGui::SameLine(); ImGui::SetCursorPosX(ImGui::GetCursorPosX() + 150);
-                ImGui::Text("+2"); //ImGui::SetCursorPosX(ImGui::GetCursorPosX() + 20);
-
-                ImGui::NextColumn();
-                ImGui::Columns(1);
-                ImGui::Separator();
-
-
+                // todo: SET_DUKI_USER_DATA
             }
 
+            if (mode_selected == "AUDIO RECORDING")
+            {
+ //               set_graphics("foto.PNG");
+                set_wav_user_data(userdata, wav, "_freq", "_out", "_autocor_v2");
+                process_wav(userdata);
+                while (1);
+            }
+            else if (mode_selected == "REAL TIME")
+            {
+                // todo: start stream
+            }
         }
-		//ImGui::ShowDemoWindow();
-       
 
-		// Rendering
-		ImGui::Render();
-		al_clear_to_color({ 0.0f, 0.0f, 0.0f, 0.0f });
-		ImGui_ImplAllegro5_RenderDrawData(ImGui::GetDrawData());
-		al_flip_display();
+        
+
+        end_gui();
 	}
 
 #ifndef USE_WAV
@@ -271,5 +144,4 @@ int main() {
 
 
     return 0;
-
 }
