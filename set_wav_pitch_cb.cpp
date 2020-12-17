@@ -297,6 +297,16 @@ PaError set_wav_pitch_cb(PaStream*& stream,
 
 void process_wav(wav_pitch_user_data_t * userdata)
 {
+
+	circular_buffer<int> test;
+	for (int i = 0; i < 3; i++)
+	{
+		test.push_back(i);
+	}
+	for (int i = 0; i < 3; i++)
+	{
+		cout << test[i];
+	}
 	AudioFile<float> wav_manager;
 	std::string file_name(userdata->wav_filename);
 	file_name += WAV_EXTENSION;
@@ -311,19 +321,29 @@ void process_wav(wav_pitch_user_data_t * userdata)
 	float * input_samples_aux = input_samples;
 	float * output_samples_aux = output_samples;
 
+
+
+	// El output siempre es stereo pero el input puede ser mono
+	// Si el input es mono, utilizar el unico canal de entrada para los dos canales de salida.
+	// Si el input es stereo, usar el primer canal de entrada para el primer canal de salida, 
+	// y el segundo canal de enrada para el segundo de salida
+	int output_channel_1_source = 0;
+	int output_channel_2_source = wav_manager.getNumChannels() - 1;
+
+
 	//Load input samples
 	for (int i = 0; i < n_samples; i++)
 	{
-		*input_samples_aux++ = wav_manager.samples[0][i];
-		*input_samples_aux++ = wav_manager.samples[1][i];
+		*input_samples_aux++ = wav_manager.samples[output_channel_1_source][i];
+		*input_samples_aux++ = wav_manager.samples[output_channel_2_source][i];
 	}
 
 	// Process wav
 	PaStreamCallbackFlags statusFlags = 0;
-	for (int i = 0; i < n_samples / (FRAMES_PER_BUFFER / 2); i++)
+	for (int i = 0; i < n_samples / (FRAMES_PER_BUFFER); i++)
 	{
-		process_window((const void *)(input_samples + i * FRAMES_PER_BUFFER),
-			output_samples + i * FRAMES_PER_BUFFER,
+		process_window((const void *)(input_samples + i * FRAMES_PER_BUFFER * 2),
+			output_samples + i * FRAMES_PER_BUFFER * 2,
 			FRAMES_PER_BUFFER,
 			nullptr,
 			statusFlags,
@@ -333,8 +353,8 @@ void process_wav(wav_pitch_user_data_t * userdata)
 	// Store new wav
 	for (int i = 0; i < n_samples; i++)
 	{
-		wav_manager.samples[0][i] = *output_samples_aux++;
-		wav_manager.samples[1][i] = *output_samples_aux++;
+		wav_manager.samples[output_channel_1_source][i] = *output_samples_aux++;
+		wav_manager.samples[output_channel_2_source][i] = *output_samples_aux++;
 	}
 
 	file_name = std::string(userdata->wav_filename);
@@ -561,17 +581,17 @@ void stretch(circular_buffer<SAMPLE> & samples_out, circular_buffer<SAMPLE> & sa
 //todo: check for nan
 void stretch(circular_buffer<SAMPLE> & samples_out, circular_buffer<SAMPLE> & samples_in, unsigned int n_samples, float originalFundamentalFrequency, float targetFundamentalFrequency)
 {
-    float window_length =  SAMPLE_RATE/originalFundamentalFrequency;
-    unsigned int offset = getPitchMarkOffset(samples_in, (unsigned int)window_length);
+    float window_length =  2*SAMPLE_RATE/originalFundamentalFrequency;
+    unsigned int offset = getPitchMarkOffset(samples_in, (unsigned int)(1.0/originalFundamentalFrequency));
     float stretch = targetFundamentalFrequency/originalFundamentalFrequency;
     int window_center_out = getOutputWindowCenter(0, offset, window_length, stretch);
     int window_center_in = offset;
 
 
     //todo: por que arranca en cero y no -1? es porque ya lo cubre el extra del callback pasado?
-    for(int window_in_index = 0, window_out_index=0;   // window_in_index: samples_in. window_out_index: samples_out.
+    for(int window_in_index = -1, window_out_index=-1;   // window_in_index: samples_in. window_out_index: samples_out.
 //        window_center_out <= n_samples;
-        window_center_out < n_samples + window_length;
+        window_center_out < 2 * n_samples - window_length / 2.0 / stretch;
         ++window_out_index)
     {
         window_in_index = round((float)(window_out_index + 0.1) / stretch); //todo: por que round y no casteo a int?
@@ -583,7 +603,7 @@ void stretch(circular_buffer<SAMPLE> & samples_out, circular_buffer<SAMPLE> & sa
              j <= window_length/2.0/stretch;
              j++)
         {
-            if((window_center_in + j*stretch) >= 0 && (window_center_out + j) >=0)
+ //           if((window_center_in + j*stretch) >= 0 && (window_center_out + j) >=0)
             {
                 samples_out[window_center_out + j] += samples_in[window_center_in + j*stretch]*HANN_FACTOR(window_length, j*stretch);
             }
@@ -593,9 +613,9 @@ void stretch(circular_buffer<SAMPLE> & samples_out, circular_buffer<SAMPLE> & sa
 
 unsigned int getPitchMarkOffset(circular_buffer<SAMPLE> & samples, unsigned int tau)
 {
-    unsigned int offset = 0;    //por default
+    unsigned int offset = FRAMES_PER_BUFFER;    //por default
     float max_sample = 0.0;
-    for (int i = 0; i < tau; ++i)
+    for (int i = FRAMES_PER_BUFFER; i < FRAMES_PER_BUFFER + tau; ++i)
     {
         if(fabs(samples[i]) > max_sample)
         {
@@ -608,5 +628,5 @@ unsigned int getPitchMarkOffset(circular_buffer<SAMPLE> & samples, unsigned int 
 
 unsigned int getOutputWindowCenter(int window_index, unsigned int offset, float window_length, float stretch)
 {
-    return (unsigned int)((offset + window_index * window_length / 2)/stretch);
+    return FRAMES_PER_BUFFER + (unsigned int)((offset - FRAMES_PER_BUFFER + window_index * window_length / 2)/stretch);
 }
