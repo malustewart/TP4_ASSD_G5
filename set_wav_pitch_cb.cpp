@@ -628,5 +628,5 @@ unsigned int getPitchMarkOffset(circular_buffer<SAMPLE> & samples, unsigned int 
 
 unsigned int getOutputWindowCenter(int window_index, unsigned int offset, float window_length, float stretch)
 {
-    return FRAMES_PER_BUFFER + (unsigned int)((offset - FRAMES_PER_BUFFER + window_index * window_length / 2)/stretch);
+    return FRAMES_PER_BUFFER + (int)(((int)offset - FRAMES_PER_BUFFER + window_index * window_length / 2)/stretch);
 }
