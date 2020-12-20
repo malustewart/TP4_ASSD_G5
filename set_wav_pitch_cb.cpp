@@ -191,11 +191,11 @@ static int process_window( const void *inputBuffer, void *outputBuffer,
 
             for (int i = 0; i < framesPerBuffer; ++i)
             {
-                *out++ = ((*ud->samples_out_left)[i] + (*ud->samples_out_left)[i+1])/2;
-                *out++ = (*ud->samples_out_right)[i];
+                *out++ = (*ud->samples_out_left) [i + framesPerBuffer];
+                *out++ = (*ud->samples_out_right)[i + framesPerBuffer];
             }
 
-            //Dump this callback's input
+            //Dump previous callback's input
             for (int i = 0; i < framesPerBuffer; ++i)
             {
                 ud->samples_in_left->pop_front();
@@ -608,12 +608,12 @@ void stretch(circular_buffer<SAMPLE> & samples_out, circular_buffer<SAMPLE> & sa
         {      
 //			if (!suppress)
 			{
-				if ((window_center_out + j) < FRAMES_PER_BUFFER && (window_center_out + j) >= 0)
+				if ((window_center_out + j) < n_samples && (window_center_out + j) >= 0)
 				{
 					float index = window_center_in + j * stretch;
-					float added_sample = samples_in[index];
+					float added_sample = samples_in[n_samples + (int)index];
 					float windowed_added_sample = added_sample * HANN_FACTOR(window_length, j*stretch);
-					samples_out[window_center_out + j] += windowed_added_sample;
+					samples_out[n_samples + window_center_out + j] += windowed_added_sample;
 				}
 			}
 
