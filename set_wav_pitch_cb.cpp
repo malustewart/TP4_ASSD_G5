@@ -10,7 +10,7 @@
 #include <fstream>
 #include <vector>
 
-#define SAMPLE_RATE         (44100)
+#define SAMPLE_RATE         (11025)
 #define FRAMES_PER_BUFFER   (1024)
 
 #define FREC_FUND_MIN       (100)
@@ -93,7 +93,7 @@ float getTargetFundamentalFrequency(float originalFundamentalFrequency, wav_pitc
 float autocorrelation_v1(circular_buffer<SAMPLE> &  samples, unsigned int n_samples, unsigned int tau);
 float autocorrelation_v2(circular_buffer<SAMPLE> &  samples, unsigned int n_samples, unsigned int tau);
 unsigned int getPitchMarkOffset(circular_buffer<SAMPLE> & samples, unsigned int tau);
-unsigned int getOutputWindowCenter(int window_index, unsigned int offset, float window_length, float stretch);
+int getOutputWindowCenter(int window_index, unsigned int offset, float window_length, float stretch);
 
 
 bool scale[OCTAVE_SUBDIVISION] =
@@ -478,7 +478,9 @@ float get_frequency_by_autocorrelation(circular_buffer<SAMPLE>& samples, unsigne
 			current_best_tau = tau;
 		}
 	}
-	return ((float)SAMPLE_RATE) / ((float)current_best_tau);
+	//return ((float)SAMPLE_RATE) / ((float)current_best_tau);
+	//debug:
+	return 110;
 }
 
 float autocorrelation_v1(circular_buffer<SAMPLE>& samples, unsigned int n_samples, unsigned int tau)
@@ -582,16 +584,16 @@ void stretch(circular_buffer<SAMPLE> & samples_out, circular_buffer<SAMPLE> & sa
 void stretch(circular_buffer<SAMPLE> & samples_out, circular_buffer<SAMPLE> & samples_in, unsigned int n_samples, float originalFundamentalFrequency, float targetFundamentalFrequency)
 {
     float window_length =  2*SAMPLE_RATE/originalFundamentalFrequency;
-    unsigned int offset = getPitchMarkOffset(samples_in, (unsigned int)(1.0/originalFundamentalFrequency));
+    unsigned int offset = getPitchMarkOffset(samples_in, (unsigned int)(SAMPLE_RATE/originalFundamentalFrequency));
     float stretch = targetFundamentalFrequency/originalFundamentalFrequency;
     int window_center_out = getOutputWindowCenter(0, offset, window_length, stretch);
     int window_center_in = offset;
 
-
+	bool suppress = true;
     //todo: por que arranca en cero y no -1? es porque ya lo cubre el extra del callback pasado?
     for(int window_in_index = -1, window_out_index=-1;   // window_in_index: samples_in. window_out_index: samples_out.
-//        window_center_out <= n_samples;
-        window_center_out < 2 * n_samples - window_length / 2.0 / stretch;
+        window_center_out - window_length / 2.0 / stretch < n_samples;
+//        window_center_out < 2 * n_samples - window_length / 2.0 / stretch;
         ++window_out_index)
     {
         window_in_index = round((float)(window_out_index + 0.1) / stretch); //todo: por que round y no casteo a int?
@@ -599,34 +601,46 @@ void stretch(circular_buffer<SAMPLE> & samples_out, circular_buffer<SAMPLE> & sa
         window_center_in = offset + window_in_index * window_length / 2;
         window_center_out = getOutputWindowCenter(window_out_index, offset, window_length, stretch);
 
+		
         for (int j = -window_length/2.0/stretch;
              j <= window_length/2.0/stretch;
              j++)
-        {
- //           if((window_center_in + j*stretch) >= 0 && (window_center_out + j) >=0)
-            {
-                samples_out[window_center_out + j] += samples_in[window_center_in + j*stretch]*HANN_FACTOR(window_length, j*stretch);
-            }
+        {      
+//			if (!suppress)
+			{
+				if ((window_center_out + j) < FRAMES_PER_BUFFER && (window_center_out + j) >= 0)
+				{
+					float index = window_center_in + j * stretch;
+					float added_sample = samples_in[index];
+					float windowed_added_sample = added_sample * HANN_FACTOR(window_length, j*stretch);
+					samples_out[window_center_out + j] += windowed_added_sample;
+				}
+			}
+
         }
+		suppress =! suppress;
     }
 }
 
 unsigned int getPitchMarkOffset(circular_buffer<SAMPLE> & samples, unsigned int tau)
 {
-    unsigned int offset = FRAMES_PER_BUFFER;    //por default
+    unsigned int offset = 0;    //por default
     float max_sample = 0.0;
-    for (int i = FRAMES_PER_BUFFER; i < FRAMES_PER_BUFFER + tau; ++i)
+    for (int i = 0; i < tau; ++i)
     {
-        if(fabs(samples[i]) > max_sample)
+		float sample = samples[i];
+        if(samples[i] > max_sample)
         {
             offset = i;
             max_sample = samples[i];
         }
     }
     return offset;
+	//debug:
+	//return 0;
 }
 
-unsigned int getOutputWindowCenter(int window_index, unsigned int offset, float window_length, float stretch)
+int getOutputWindowCenter(int window_index, unsigned int offset, float window_length, float stretch)
 {
-    return FRAMES_PER_BUFFER + (int)(((int)offset - FRAMES_PER_BUFFER + window_index * window_length / 2)/stretch);
+    return (int)(((int)offset + window_index * window_length / 2)/stretch);
 }
