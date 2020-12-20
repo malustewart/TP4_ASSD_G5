@@ -7,6 +7,9 @@
 #include <allegro5\allegro.h>
 #include <allegro5\allegro_primitives.h>
 #include <allegro5\allegro_image.h>
+#define OCTAVE_SUBDIVISION 12
+
+enum notes_number { DO, DOs, RE, REs, MI, FA, FAs, SOL, SOLs, LA, LAs, SI };
 
 typedef struct allegro_settings_t
 {
@@ -18,7 +21,9 @@ typedef struct allegro_settings_t
 typedef struct scale_t
 {
     const char* note;
-    bool I;
+    int note_number;
+    bool scale_octave[OCTAVE_SUBDIVISION];
+    /* bool I;
     bool IIb;
     bool II;
     bool IIIb;
@@ -29,7 +34,8 @@ typedef struct scale_t
     bool VIb;
     bool VI;
     bool VIIb;
-    bool VII;
+    bool VII;*/
+    
 }scale_t;
 
 allegro_settings_t gui_init(void);

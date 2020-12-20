@@ -16,11 +16,11 @@
 #define FREC_FUND_MIN       (100)
 #define FREC_FUND_MAX       (700)
 
-#define GET_FREQ(o,n)       (FUND_FREQ * pow(2, ((float)(n) + OCTAVE_SUBDIVISION*(float)(octave))/OCTAVE_SUBDIVISION))
+#define GET_FREQ(f,o,n)       (f * pow(2, ((float)(n) + OCTAVE_SUBDIVISION*(float)(octave))/OCTAVE_SUBDIVISION))
 
 #define OCTAVES             (5)
-#define OCTAVE_SUBDIVISION  (12)
-#define FUND_FREQ C_FREQ
+//#define OCTAVE_SUBDIVISION  (12)
+//#define FUND_FREQ C_FREQ
 #define C_FREQ  32.7
 #define Cs_FREQ 34.65
 #define D_FREQ  36.71
@@ -49,6 +49,8 @@ using namespace std;
 
 typedef float SAMPLE;
 
+
+
 typedef struct wav_pitch_user_data_t
 {
     circular_buffer<SAMPLE> * samples_in_left;
@@ -66,7 +68,8 @@ typedef struct wav_pitch_user_data_t
 	float stretch;
 
 	// FOR DUKI
-	//todo: scale o puntero a funcion que devuelva target fundamental frequency
+	float scale_fund_freq; 
+	bool scale[OCTAVE_SUBDIVISION];
 	
 	/******************/
 	// FOR NON REAL TIME
@@ -96,7 +99,7 @@ unsigned int getPitchMarkOffset(circular_buffer<SAMPLE> & samples, unsigned int 
 int getOutputWindowCenter(int window_index, unsigned int offset, float window_length, float stretch);
 
 
-bool scale[OCTAVE_SUBDIVISION] =
+/*bool scale[OCTAVE_SUBDIVISION] =
         {
             true,   // I
             false,  // IIb
@@ -110,9 +113,9 @@ bool scale[OCTAVE_SUBDIVISION] =
             false,  // VI
             true,   // VIIb
             false   // VII
-        };
+        };*/
 
-float scale_fund_freq = C_FREQ;
+//float scale_fund_freq = C_FREQ;
 
 
 
@@ -437,11 +440,66 @@ wav_pitch_user_data_t * set_wav_user_data(wav_pitch_user_data_t * ud, const char
 	return ud;
 }
 
-wav_pitch_user_data_t * set_alvin_user_data(wav_pitch_user_data_t * ud, float stretch)
+void set_alvin_user_data(wav_pitch_user_data_t * ud, float stretch)
 {
 	ud->is_alvin = true;
 	ud->stretch = stretch;
-	return nullptr;
+}
+void set_duki_user_data(wav_pitch_user_data_t* ud, scale_t scale_)
+{
+	ud->is_alvin = false;
+	for (int i = 0; i < OCTAVE_SUBDIVISION; i++)
+	{
+		ud->scale[i] = scale_.scale_octave[i];
+	}
+	ud->scale_fund_freq = SelectedFundFrec(scale_.note_number);
+}
+
+float SelectedFundFrec(int note)
+{
+	float fundFreq;
+	switch (note)
+	{
+	case DO:
+		fundFreq = C_FREQ;
+		break;
+	case DOs:
+		fundFreq = Cs_FREQ;
+		break;
+	case RE:
+		fundFreq = D_FREQ;
+		break;
+	case REs:
+		fundFreq = Ds_FREQ;
+		break;
+	case MI:
+		fundFreq = E_FREQ;
+		break;
+	case FA:
+		fundFreq = F_FREQ;
+		break;
+	case FAs:
+		fundFreq = Fs_FREQ;
+		break;
+	case SOL:
+		fundFreq = G_FREQ;
+		break;
+	case SOLs:
+		fundFreq = Gs_FREQ;
+		break;
+	case LA:
+		fundFreq = A_FREQ;
+		break;
+	case LAs:
+		fundFreq = As_FREQ;
+		break;
+	case SI:
+		fundFreq = B_FREQ;
+		break;
+	default:
+		break;
+	}
+	return fundFreq;
 }
 
 void delete_user_data(wav_pitch_user_data_t * ud)
@@ -515,28 +573,28 @@ float getTargetFundamentalFrequency(float originalFundamentalFrequency, wav_pitc
 	{
 		return originalFundamentalFrequency * ud->stretch;
 	}
-    float aux = (log2f(originalFundamentalFrequency / FUND_FREQ));
+    float aux = (log2f(originalFundamentalFrequency / ud->scale_fund_freq));
     int octave = (int)aux;
     int note = (int)roundf(OCTAVE_SUBDIVISION*(aux-octave));  // note in octave (from 0 (fundamental) to OCTAVE_SUBDIVISION - 1)
-    if(!scale[note])	//todo: scale sacarlo de ud
+    if(!ud->scale[note])	//todo: scale sacarlo de ud
     {
         float dif = OCTAVE_SUBDIVISION*(aux-octave) - roundf(OCTAVE_SUBDIVISION*(aux-octave));
         if( dif>0)  //to next allowed frequency
         {
-            while (!scale[note])
+            while (!ud->scale[note])
             {
                 note = ++note % OCTAVE_SUBDIVISION;
                 if(!note){octave++;};   //if note=0, octave has been increased
             }
         } else {    //to previous allowed frequency
-            while (!scale[note])
+            while (!ud->scale[note])
             {
                 if(note) { note--; }  // if note is not first in octave
                 else{ note = OCTAVE_SUBDIVISION - 1; if(octave) {octave--;}};   //
             }
         }
     }
-    return GET_FREQ(octave, note);
+    return GET_FREQ(ud->scale_fund_freq,octave, note);
 }
 /*
 

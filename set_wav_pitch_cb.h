@@ -8,9 +8,10 @@
 #include <portaudio.h>
 #include <iostream>
 #include "circular_buffer.h"
+#include "gui.h"
 
 #define USE_WAV
-#define WAV_FILE "C:\\Users\\mlste\\source\\repos\\TP_FINAL_ASSD\\TP_FINAL_ASSD\\bin\\you-call-that-fun"  //Path relativo del archivo .wav SIN EXTENSION
+#define WAV_FILE "C:\Users\User\Documents\Visual Studio 2019\Code Snippets\Visual C++\My Code Snippets\TP_FINAL_ASSD\TP_FINAL_ASSD\king_love"  //Path relativo del archivo .wav SIN EXTENSION
 #define WAV_EXTENSION ".wav"
 
 extern int gNumNoInputs;
@@ -25,8 +26,10 @@ float get_frequency_by_autocorrelation_v2(circular_buffer<SAMPLE>& samples, unsi
 
 // Managing configurations:
 wav_pitch_user_data_t * create_user_data(freq_detector_t freq_detector = get_frequency_by_autocorrelation_v2);
-wav_pitch_user_data_t * set_wav_user_data(wav_pitch_user_data_t * ud, const char * filename, const char * bin_suffix, const char * out_suffix, const char * freq_det_suffix);
-wav_pitch_user_data_t * set_alvin_user_data(wav_pitch_user_data_t * ud, float stretch);
+wav_pitch_user_data_t* set_wav_user_data(wav_pitch_user_data_t * ud, const char * filename, const char * bin_suffix, const char * out_suffix, const char * freq_det_suffix);
+void set_alvin_user_data(wav_pitch_user_data_t * ud, float stretch);
+void set_duki_user_data(wav_pitch_user_data_t* ud, scale_t scale);
+float SelectedFundFrec(int note);
 void delete_user_data(wav_pitch_user_data_t * ud);
 
 // 

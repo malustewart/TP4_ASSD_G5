@@ -6,6 +6,7 @@
 #include "gui.h"
 
 #include <fstream>
+#include "main.h"
 
 #define PA_SAMPLE_TYPE  paFloat32
 
@@ -71,6 +72,7 @@ int main() {
         running = create_window(all_settings, 5); //el segundo parametro es el tamano de la letra 
         const char* mode_selected = select_mode(); // AUDIO RECORDING & REAL TIME
         static char* wav = NULL;
+        scale_t scale;
         if (mode_selected == "AUDIO RECORDING")
         {
             wav = insert_wav();
@@ -84,7 +86,7 @@ int main() {
         }
         else if (characteristic_selected == "DUKI")
         {
-            scale_t scale = select_scale();
+            scale = select_scale();
         }
 
         bool data_enter = mode_selected != NULL && characteristic_selected != NULL;
@@ -98,7 +100,7 @@ int main() {
             } 
             else if (characteristic_selected == "DUKI")
             {
-                // todo: SET_DUKI_USER_DATA
+                set_duki_user_data(userdata, scale);
             }
 
             if (mode_selected == "AUDIO RECORDING")

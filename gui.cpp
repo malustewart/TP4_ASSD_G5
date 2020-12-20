@@ -1,6 +1,7 @@
 
 #include "gui.h"
 
+
 allegro_settings_t gui_init(void)
 {
 	// Setup Allegro
@@ -141,14 +142,14 @@ int select_factor(void)
 
 scale_t select_scale(void)
 {
-	static scale_t scale = { "DO", true, false, true, false, true, true, false, true, false, true, false, true};
+	static scale_t scale = { "DO",DO, true, false, true, false, true, true, false, true, false, true, false, true};
 
 	ImGui::Separator();
 	ImGui::SetCursorPosY(ImGui::GetCursorPosY() + 20);
 	ImGui::SetCursorPosX(ImGui::GetCursorPosX() + (ImGui::GetWindowWidth() / 2) - 250);
 	ImGui::Text("CHANGE SCALE:  ");
 	const char* note_items[] = { "DO", "DOs", "RE", "REs", "MI", "FA","FAs", "SOL","SOLs", "LA","LAs", "SI" };
-	ImGui::SetNextItemWidth(150);
+	ImGui::SetNextItemWidth(250);
 	ImGui::SameLine();
 	if (ImGui::BeginCombo("##note", scale.note)) // The second parameter is the label previewed before opening the combo.
 	{
@@ -156,7 +157,10 @@ scale_t select_scale(void)
 		{
 			bool is_selected = (scale.note == note_items[n]); // You can store your selection however you want, outside or inside your objects
 			if (ImGui::Selectable(note_items[n], is_selected))
+			{
 				scale.note = note_items[n];
+				scale.note_number = n;
+			}
 			if (is_selected)
 				ImGui::SetItemDefaultFocus();   // You may set the initial focus when opening the combo (scrolling + for keyboard navigation support)
 		}
@@ -167,31 +171,31 @@ scale_t select_scale(void)
 	ImGui::Separator();
 
 	ImGui::SetCursorPosX(ImGui::GetCursorPosX() + (ImGui::GetWindowWidth() / 10));
-	ImGui::Checkbox("I", &scale.I); ImGui::SetCursorPosX(ImGui::GetCursorPosX() + (ImGui::GetWindowWidth() / 10));
-	ImGui::Checkbox("IIb", &scale.IIb); ImGui::SetCursorPosX(ImGui::GetCursorPosX() + (ImGui::GetWindowWidth() / 10));
-	ImGui::Checkbox("II", &scale.II); ImGui::SetCursorPosX(ImGui::GetCursorPosX() + (ImGui::GetWindowWidth() / 10));
+	ImGui::Checkbox("I", &scale.scale_octave[0]); ImGui::SetCursorPosX(ImGui::GetCursorPosX() + (ImGui::GetWindowWidth() / 10));
+	ImGui::Checkbox("IIb", &scale.scale_octave[1]); ImGui::SetCursorPosX(ImGui::GetCursorPosX() + (ImGui::GetWindowWidth() / 10));
+	ImGui::Checkbox("II", &scale.scale_octave[2]); ImGui::SetCursorPosX(ImGui::GetCursorPosX() + (ImGui::GetWindowWidth() / 10));
 	ImGui::NextColumn();
 
 	ImGui::SetCursorPosX(ImGui::GetCursorPosX() + (ImGui::GetWindowWidth() / 10));
 
 
-	ImGui::Checkbox("IIIb", &scale.IIIb); ImGui::SetCursorPosX(ImGui::GetCursorPosX() + (ImGui::GetWindowWidth() / 10));
-	ImGui::Checkbox("III", &scale.III); ImGui::SetCursorPosX(ImGui::GetCursorPosX() + (ImGui::GetWindowWidth() / 10));
-	ImGui::Checkbox("IV", &scale.IV); ImGui::SetCursorPosX(ImGui::GetCursorPosX() + (ImGui::GetWindowWidth() / 10));
+	ImGui::Checkbox("IIIb", &scale.scale_octave[3]); ImGui::SetCursorPosX(ImGui::GetCursorPosX() + (ImGui::GetWindowWidth() / 10));
+	ImGui::Checkbox("III", &scale.scale_octave[4]); ImGui::SetCursorPosX(ImGui::GetCursorPosX() + (ImGui::GetWindowWidth() / 10));
+	ImGui::Checkbox("IV", &scale.scale_octave[5]); ImGui::SetCursorPosX(ImGui::GetCursorPosX() + (ImGui::GetWindowWidth() / 10));
 	ImGui::NextColumn();
 
 	ImGui::SetCursorPosX(ImGui::GetCursorPosX() + (ImGui::GetWindowWidth() / 10));
 
-	ImGui::Checkbox("Vb", &scale.Vb); ImGui::SetCursorPosX(ImGui::GetCursorPosX() + (ImGui::GetWindowWidth() / 10));
-	ImGui::Checkbox("V", &scale.V); ImGui::SetCursorPosX(ImGui::GetCursorPosX() + (ImGui::GetWindowWidth() / 10));
-	ImGui::Checkbox("VIb", &scale.VIb); ImGui::SetCursorPosX(ImGui::GetCursorPosX() + (ImGui::GetWindowWidth() / 10));
+	ImGui::Checkbox("Vb", &scale.scale_octave[6]); ImGui::SetCursorPosX(ImGui::GetCursorPosX() + (ImGui::GetWindowWidth() / 10));
+	ImGui::Checkbox("V", &scale.scale_octave[7]); ImGui::SetCursorPosX(ImGui::GetCursorPosX() + (ImGui::GetWindowWidth() / 10));
+	ImGui::Checkbox("VIb", &scale.scale_octave[8]); ImGui::SetCursorPosX(ImGui::GetCursorPosX() + (ImGui::GetWindowWidth() / 10));
 	ImGui::NextColumn();
 
 	ImGui::SetCursorPosX(ImGui::GetCursorPosX() + (ImGui::GetWindowWidth() / 10));
 
-	ImGui::Checkbox("VI", &scale.VI); ImGui::SetCursorPosX(ImGui::GetCursorPosX() + (ImGui::GetWindowWidth() / 10));
-	ImGui::Checkbox("VIIb", &scale.VIIb); ImGui::SetCursorPosX(ImGui::GetCursorPosX() + (ImGui::GetWindowWidth() / 10));
-	ImGui::Checkbox("VII", &scale.VII); ImGui::SetCursorPosX(ImGui::GetCursorPosX() + (ImGui::GetWindowWidth() / 10));
+	ImGui::Checkbox("VI", &scale.scale_octave[9]); ImGui::SetCursorPosX(ImGui::GetCursorPosX() + (ImGui::GetWindowWidth() / 10));
+	ImGui::Checkbox("VIIb", &scale.scale_octave[10]); ImGui::SetCursorPosX(ImGui::GetCursorPosX() + (ImGui::GetWindowWidth() / 10));
+	ImGui::Checkbox("VII", &scale.scale_octave[11]); ImGui::SetCursorPosX(ImGui::GetCursorPosX() + (ImGui::GetWindowWidth() / 10));
 	ImGui::NextColumn();
 
 	ImGui::Columns(1);
