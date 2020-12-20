@@ -10,7 +10,7 @@
 #include <fstream>
 #include <vector>
 
-#define SAMPLE_RATE         (11025)
+#define SAMPLE_RATE         (44100)
 #define FRAMES_PER_BUFFER   (1024)
 
 #define FREC_FUND_MIN       (100)
@@ -191,8 +191,8 @@ static int process_window( const void *inputBuffer, void *outputBuffer,
 
             for (int i = 0; i < framesPerBuffer; ++i)
             {
-                *out++ = (*ud->samples_out_left) [i + framesPerBuffer];
-                *out++ = (*ud->samples_out_right)[i + framesPerBuffer];
+                *out++ = (*ud->samples_out_left) [i];
+                *out++ = (*ud->samples_out_right)[i];
             }
 
             //Dump previous callback's input
@@ -583,42 +583,51 @@ void stretch(circular_buffer<SAMPLE> & samples_out, circular_buffer<SAMPLE> & sa
 //todo: check for nan
 void stretch(circular_buffer<SAMPLE> & samples_out, circular_buffer<SAMPLE> & samples_in, unsigned int n_samples, float originalFundamentalFrequency, float targetFundamentalFrequency)
 {
-    float window_length =  2*SAMPLE_RATE/originalFundamentalFrequency;
     unsigned int offset = getPitchMarkOffset(samples_in, (unsigned int)(SAMPLE_RATE/originalFundamentalFrequency));
-    float stretch = targetFundamentalFrequency/originalFundamentalFrequency;
-    int window_center_out = getOutputWindowCenter(0, offset, window_length, stretch);
+    
+	float stretch = targetFundamentalFrequency/originalFundamentalFrequency;
+
+	float window_length_in = 2 * SAMPLE_RATE / originalFundamentalFrequency;
+	float window_length_out = window_length_in / stretch;
+
+    int window_center_out = 0;	//solo se le da valor para poder entrar al for (ver la condicion de salida)
     int window_center_in = offset;
+	
+	int window_index_in, window_index_out;
 
-	bool suppress = true;
-    //todo: por que arranca en cero y no -1? es porque ya lo cubre el extra del callback pasado?
-    for(int window_in_index = -1, window_out_index=-1;   // window_in_index: samples_in. window_out_index: samples_out.
-        window_center_out - window_length / 2.0 / stretch < n_samples;
-//        window_center_out < 2 * n_samples - window_length / 2.0 / stretch;
-        ++window_out_index)
+	int buff_fade_len = n_samples / 16;
+
+    for(window_index_out =  - (buff_fade_len / (window_length_out / 2) + 2);   // window_index_in: samples_in. window_index_out: samples_out.
+        window_center_out - window_length_out / 2.0 < n_samples;
+        ++window_index_out)
     {
-        window_in_index = round((float)(window_out_index + 0.1) / stretch); //todo: por que round y no casteo a int?
+        window_index_in = round((float)(window_index_out + 0.1) / stretch); //todo: por que round y no casteo a int?
 
-        window_center_in = offset + window_in_index * window_length / 2;
-        window_center_out = getOutputWindowCenter(window_out_index, offset, window_length, stretch);
+        window_center_in = offset + window_index_in * window_length_in / 2;
+        window_center_out = getOutputWindowCenter(window_index_out, offset, window_length_in, stretch);
 
 		
-        for (int j = -window_length/2.0/stretch;
-             j <= window_length/2.0/stretch;
+        for (int j = -window_length_out/2.0;
+             j <= window_length_out/2.0;
              j++)
-        {      
-//			if (!suppress)
+        {     
+			int sample_pos_out = window_center_out + j;
+			if ( -buff_fade_len <= sample_pos_out && sample_pos_out < (int)n_samples)
 			{
-				if ((window_center_out + j) < n_samples && (window_center_out + j) >= 0)
-				{
-					float index = window_center_in + j * stretch;
-					float added_sample = samples_in[n_samples + (int)index];
-					float windowed_added_sample = added_sample * HANN_FACTOR(window_length, j*stretch);
-					samples_out[n_samples + window_center_out + j] += windowed_added_sample;
-				}
+				int sample_pos_in = window_center_in + j * stretch;
+				float sample = samples_in[n_samples + sample_pos_in];
+				sample *= HANN_FACTOR(window_length_in, j*stretch);
+				
+				// buffer fade:
+				if (sample_pos_out < 0)
+					sample *= HANN_FACTOR(buff_fade_len * 2, sample_pos_out);
+				else if (sample_pos_out > (int) n_samples - buff_fade_len)
+					sample *= HANN_FACTOR(buff_fade_len * 2, sample_pos_out - (n_samples - buff_fade_len));
+
+				samples_out[n_samples + window_center_out + j] += sample;
 			}
 
         }
-		suppress =! suppress;
     }
 }
 
