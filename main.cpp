@@ -94,7 +94,7 @@ int main() {
         {
             if (characteristic_selected == "CALVIN")
             {
-                set_alvin_user_data(userdata, pow(2,selected_factor));
+                set_alvin_user_data(userdata, pow(2,selected_factor/12.0));
             } 
             else if (characteristic_selected == "DUKI")
             {
