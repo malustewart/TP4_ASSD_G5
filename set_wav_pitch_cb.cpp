@@ -478,9 +478,9 @@ float get_frequency_by_autocorrelation(circular_buffer<SAMPLE>& samples, unsigne
 			current_best_tau = tau;
 		}
 	}
-	//return ((float)SAMPLE_RATE) / ((float)current_best_tau);
+	return ((float)SAMPLE_RATE) / ((float)current_best_tau);
 	//debug:
-	return 110;
+	//return 110;
 }
 
 float autocorrelation_v1(circular_buffer<SAMPLE>& samples, unsigned int n_samples, unsigned int tau)
