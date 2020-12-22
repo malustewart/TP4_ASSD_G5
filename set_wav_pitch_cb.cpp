@@ -11,7 +11,7 @@
 #include <vector>
 
 #define SAMPLE_RATE         (44100)
-#define FRAMES_PER_BUFFER   (1024)
+#define FRAMES_PER_BUFFER   (256)
 
 #define FREC_FUND_MIN       (100)
 #define FREC_FUND_MAX       (700)
@@ -73,11 +73,13 @@ typedef struct wav_pitch_user_data_t
 	
 	/******************/
 	// FOR NON REAL TIME
-	ofstream * datafile;
+	ofstream * freq_det_bin;
+	ofstream * freq_obj_bin;
 	const char * wav_filename;
 	const char * out_suffix;
 	const char * bin_suffix;
 	const char * freq_det_suffix;
+	const char * freq_obj_suffix;
 
 	// FOR REAL TIME
 
@@ -180,16 +182,19 @@ static int process_window( const void *inputBuffer, void *outputBuffer,
             }
 
             float originalFundF = get_frequency_by_autocorrelation_v1(*(ud->samples_in_left), framesPerBuffer);
-            int originalFundF_int = 0;
+			int originalFundF_int = 0, targetFundF_int = 0;
             float targetFundF = 0.0f;
             if (!isnan(originalFundF))
             {
-                originalFundF_int = (int)originalFundF;
-                targetFundF = getTargetFundamentalFrequency(originalFundF, ud);
+				targetFundF = getTargetFundamentalFrequency(originalFundF, ud);
                 stretch(*(ud->samples_out_left) , *(ud->samples_in_left) , framesPerBuffer, originalFundF, targetFundF);
                 stretch(*(ud->samples_out_right), *(ud->samples_in_right), framesPerBuffer, originalFundF, targetFundF);
-            }
-            ud->datafile->write((char*)&originalFundF_int, sizeof(int));
+			
+				originalFundF_int = (int)originalFundF; targetFundF_int = (int)targetFundF;
+			}
+
+			ud->freq_det_bin->write((char*)&originalFundF_int, sizeof(int));
+			ud->freq_obj_bin->write((char*)&targetFundF_int, sizeof(int));
 
 
             for (int i = 0; i < framesPerBuffer; ++i)
@@ -219,7 +224,7 @@ PaError set_wav_pitch_cb(PaStream*& stream,
 {
 
 	wav_pitch_user_data_t * userdata = create_user_data();
-	set_wav_user_data(userdata, WAV_FILE, "_freq", "_out", "_v1");
+	set_wav_user_data(userdata, WAV_FILE, "_freq", "_out", "_det","_obj" );
 #ifdef USE_WAV
 	AudioFile<float> wav_manager;
 	std::string file_name(WAV_FILE);
@@ -407,7 +412,8 @@ wav_pitch_user_data_t * create_user_data(freq_detector_t freq_detector)
 	userdata->samples_out_left = samples_out_left;
 	userdata->samples_out_right = samples_out_right;
 
-	userdata->datafile = nullptr;
+	userdata->freq_det_bin = nullptr;
+	userdata->freq_obj_bin = nullptr;
 	userdata->wav_filename = nullptr;
 	userdata->bin_suffix = nullptr;
 	userdata->out_suffix = nullptr;
@@ -423,20 +429,26 @@ wav_pitch_user_data_t * create_user_data(freq_detector_t freq_detector)
 	return userdata;
 }
 
-wav_pitch_user_data_t * set_wav_user_data(wav_pitch_user_data_t * ud, const char * filename, const char * bin_suffix, const char * out_suffix, const char * freq_det_suffix)
+wav_pitch_user_data_t * set_wav_user_data(wav_pitch_user_data_t * ud, const char * filename, const char * bin_suffix, const char * out_suffix, const char * freq_det_suffix, const char * freq_obj_suffix)
 {
 	ud->bin_suffix = bin_suffix;
 	ud->out_suffix = out_suffix;
 	ud->wav_filename = filename;
 	ud->freq_det_suffix = freq_det_suffix;
+	ud->freq_obj_suffix = freq_obj_suffix;
 
-	std::string file_name(filename);
-	file_name += bin_suffix;
-	file_name += freq_det_suffix;
-	file_name += ".bin";
+	std::string freq_det_file_name(filename);
+	freq_det_file_name += bin_suffix;
+	freq_det_file_name += freq_det_suffix;
+	freq_det_file_name += ".bin";
+	ud->freq_det_bin = new ofstream(freq_det_file_name.c_str(), ios::binary | ios::out);
 
-	ud->datafile = new ofstream(file_name.c_str(), ios::binary | ios::out);
-
+	std::string freq_obj_file_name(filename);
+	freq_obj_file_name += bin_suffix;
+	freq_obj_file_name += freq_obj_suffix;
+	freq_obj_file_name += ".bin";
+	ud->freq_obj_bin = new ofstream(freq_obj_file_name.c_str(), ios::binary | ios::out);
+	
 	return ud;
 }
 
@@ -504,10 +516,15 @@ float SelectedFundFrec(int note)
 
 void delete_user_data(wav_pitch_user_data_t * ud)
 {
-	if (ud->datafile) 
+	if (ud->freq_det_bin) 
 	{ 
-		ud->datafile->close();
-		delete ud->datafile;
+		ud->freq_det_bin->close();
+		delete ud->freq_det_bin;
+	}
+	if (ud->freq_obj_bin)
+	{
+		ud->freq_obj_bin->close();
+		delete ud->freq_obj_bin;
 	}
 	delete ud->samples_in_left;
 	delete ud->samples_in_right;

@@ -6,7 +6,7 @@
 #include "gui.h"
 
 #include <fstream>
-#include "main.h"
+
 
 #define PA_SAMPLE_TYPE  paFloat32
 
@@ -106,7 +106,7 @@ int main() {
             if (mode_selected == "AUDIO RECORDING")
             {
  //               set_graphics("foto.PNG");
-                set_wav_user_data(userdata, wav, "_freq", "_out", "_autocor_v2");
+                set_wav_user_data(userdata, wav, "_freq", "", "_det", "_obj");
                 process_wav(userdata);
                 running = false;
             }

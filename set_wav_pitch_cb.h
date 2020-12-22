@@ -26,7 +26,7 @@ float get_frequency_by_autocorrelation_v2(circular_buffer<SAMPLE>& samples, unsi
 
 // Managing configurations:
 wav_pitch_user_data_t * create_user_data(freq_detector_t freq_detector = get_frequency_by_autocorrelation_v2);
-wav_pitch_user_data_t* set_wav_user_data(wav_pitch_user_data_t * ud, const char * filename, const char * bin_suffix, const char * out_suffix, const char * freq_det_suffix);
+wav_pitch_user_data_t* set_wav_user_data(wav_pitch_user_data_t * ud, const char * filename, const char * bin_suffix, const char * out_suffix, const char * freq_det_suffix, const char * freq_obj_suffix);
 void set_alvin_user_data(wav_pitch_user_data_t * ud, float stretch);
 void set_duki_user_data(wav_pitch_user_data_t* ud, scale_t scale);
 float SelectedFundFrec(int note);
