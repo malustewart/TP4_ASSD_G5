@@ -12,7 +12,47 @@
 
 using namespace std;
 
+
+void run_duki_debug(const char * note, int note_number, bool * scale, const char * wav_filename, const char * out_suffix) {
+	scale_t s;
+	s.note = note;
+	s.note_number = note_number;
+	for (size_t i = 0; i < 12; i++)
+	{
+		s.scale_octave[i] = scale[i];
+	}
+
+	wav_pitch_user_data_t * userdata = create_user_data(get_frequency_by_autocorrelation_v2);
+	set_duki_user_data(userdata, s);
+	set_wav_user_data(userdata, wav_filename, "_bin", out_suffix, "_det", "_obj");
+	process_wav(userdata);
+}
+
+
 int main() {
+
+	//DEBUG
+	const char* n[] = { "LA", "MI", "MI", "MI", "As", "" };
+	int note_number[] = { LA, MI, MI, MI, LAs };
+	const char * f[] = { "440_A4", "658_E5", "329_E4", "168_E3", "233_Bb3" };
+	bool sc[] = {true, false, false, false, false, false, false, false, 
+				false, false, false, false};
+	
+	for (size_t i = 0; strcmp(n[i], ""); i++)
+	{
+		//run_duki_debug(n[i], note_number[i], sc, f[i], "_out_duki_+0");
+	}
+
+	sc[0] = false;
+	sc[3] = true;
+//	for (size_t i = 0; strcmp(n[i], ""); i++)
+	{
+		run_duki_debug(n[2], note_number[2], sc, f[2], "_out_duki_+4");
+	}
+
+
+	return 0;
+	//END DEBUG
 
 //******PORTAUDIO CONFIG***********//
     PaStreamParameters inputParameters, outputParameters;

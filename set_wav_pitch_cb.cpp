@@ -10,8 +10,7 @@
 #include <fstream>
 #include <vector>
 
-#define SAMPLE_RATE         (44100)
-#define FRAMES_PER_BUFFER   (256)
+#define FRAMES_PER_BUFFER   (1024)
 
 #define FREC_FUND_MIN       (100)
 #define FREC_FUND_MAX       (700)
@@ -45,6 +44,10 @@
 
 #define HANN_FACTOR(length, position) (0.5*(1+cos(2*3.1415926*(position)/(length))))
 
+
+
+int SAMPLE_RATE = 44100;
+
 using namespace std;
 
 typedef float SAMPLE;
@@ -62,6 +65,8 @@ typedef struct wav_pitch_user_data_t
 	freq_detector_t freq_detector;
 	bool is_real_time;
 	bool is_alvin;
+
+	int prev_tau;
 
 	/******************/
 	// FOR ALVIN
@@ -92,7 +97,7 @@ typedef float(*autocorrelator_t)(circular_buffer<SAMPLE>& samples, unsigned int 
 
 
 
-float get_frequency_by_autocorrelation(circular_buffer<SAMPLE>& samples, unsigned int n_samples, autocorrelator_t autocorrelator);
+float get_frequency_by_autocorrelation(circular_buffer<SAMPLE>& samples, unsigned int n_samples, autocorrelator_t autocorrelator, int& prev_tau);
 void stretch(circular_buffer<SAMPLE> & samples_out, circular_buffer<SAMPLE> & samples_in, unsigned int n_samples, float originalFundamentalFrequency, float targetFundamentalFrequency);
 float getTargetFundamentalFrequency(float originalFundamentalFrequency, wav_pitch_user_data_t * ud);
 float autocorrelation_v1(circular_buffer<SAMPLE> &  samples, unsigned int n_samples, unsigned int tau);
@@ -181,7 +186,7 @@ static int process_window( const void *inputBuffer, void *outputBuffer,
                 }
             }
 
-            float originalFundF = get_frequency_by_autocorrelation_v1(*(ud->samples_in_left), framesPerBuffer);
+            float originalFundF = get_frequency_by_autocorrelation_v1(*(ud->samples_in_left), framesPerBuffer, ud->prev_tau);
 			int originalFundF_int = 0, targetFundF_int = 0;
             float targetFundF = 0.0f;
             if (!isnan(originalFundF))
@@ -272,7 +277,6 @@ PaError set_wav_pitch_cb(PaStream*& stream,
 
 	file_name = std::string(userdata->wav_filename);
 	file_name += userdata->out_suffix;
-	file_name += userdata->freq_det_suffix;
 	file_name += WAV_EXTENSION;
 
 	wav_manager.save(file_name.c_str());
@@ -306,23 +310,26 @@ PaError set_wav_pitch_cb(PaStream*& stream,
 void process_wav(wav_pitch_user_data_t * userdata)
 {
 
-	circular_buffer<int> test;
-	for (int i = 0; i < 3; i++)
-	{
-		test.push_back(i);
-	}
-	for (int i = 0; i < 3; i++)
-	{
-		cout << test[i];
-	}
 	AudioFile<float> wav_manager;
 	std::string file_name(userdata->wav_filename);
 	file_name += WAV_EXTENSION;
 
 	wav_manager.load(file_name.c_str());
-	wav_manager.printSummary();
 
 	int n_samples = wav_manager.getNumSamplesPerChannel();
+
+	if (n_samples == 0) {
+		cout << file_name << " not found." << endl;
+		return;
+	}
+
+	SAMPLE_RATE = wav_manager.getSampleRate();
+
+	cout << "\n" << file_name << endl;
+
+	wav_manager.printSummary();
+
+
 
 	float * output_samples = new float[2 * n_samples + FRAMES_PER_BUFFER];
 	float * input_samples = new float[2 * n_samples + FRAMES_PER_BUFFER];
@@ -367,7 +374,6 @@ void process_wav(wav_pitch_user_data_t * userdata)
 
 	file_name = std::string(userdata->wav_filename);
 	file_name += userdata->out_suffix;
-	file_name += userdata->freq_det_suffix;
 	file_name += WAV_EXTENSION;
 
 	wav_manager.save(file_name.c_str());
@@ -377,14 +383,14 @@ void process_wav(wav_pitch_user_data_t * userdata)
 }
 
 //todo: hacer con SAMPLE * en vez de circular_buffer<SAMPLE>&
-float get_frequency_by_autocorrelation_v2(circular_buffer<SAMPLE>& samples, unsigned int n_samples)
+float get_frequency_by_autocorrelation_v2(circular_buffer<SAMPLE>& samples, unsigned int n_samples, int& prev_tau)
 {
-	return get_frequency_by_autocorrelation(samples, n_samples, autocorrelation_v2);
+	return get_frequency_by_autocorrelation(samples, n_samples, autocorrelation_v2, prev_tau);
 }
 
-float get_frequency_by_autocorrelation_v1(circular_buffer<SAMPLE>& samples, unsigned int n_samples)
+float get_frequency_by_autocorrelation_v1(circular_buffer<SAMPLE>& samples, unsigned int n_samples, int& prev_tau)
 {
-	return get_frequency_by_autocorrelation(samples, n_samples, autocorrelation_v1);
+	return get_frequency_by_autocorrelation(samples, n_samples, autocorrelation_v1, prev_tau);
 }
 
 wav_pitch_user_data_t * create_user_data(freq_detector_t freq_detector)
@@ -431,6 +437,8 @@ wav_pitch_user_data_t * create_user_data(freq_detector_t freq_detector)
 
 wav_pitch_user_data_t * set_wav_user_data(wav_pitch_user_data_t * ud, const char * filename, const char * bin_suffix, const char * out_suffix, const char * freq_det_suffix, const char * freq_obj_suffix)
 {
+	ud->prev_tau = -1;
+
 	ud->bin_suffix = bin_suffix;
 	ud->out_suffix = out_suffix;
 	ud->wav_filename = filename;
@@ -438,12 +446,14 @@ wav_pitch_user_data_t * set_wav_user_data(wav_pitch_user_data_t * ud, const char
 	ud->freq_obj_suffix = freq_obj_suffix;
 
 	std::string freq_det_file_name(filename);
+	freq_det_file_name += out_suffix;
 	freq_det_file_name += bin_suffix;
 	freq_det_file_name += freq_det_suffix;
 	freq_det_file_name += ".bin";
 	ud->freq_det_bin = new ofstream(freq_det_file_name.c_str(), ios::binary | ios::out);
 
 	std::string freq_obj_file_name(filename);
+	freq_obj_file_name += out_suffix;
 	freq_obj_file_name += bin_suffix;
 	freq_obj_file_name += freq_obj_suffix;
 	freq_obj_file_name += ".bin";
@@ -536,7 +546,7 @@ void delete_user_data(wav_pitch_user_data_t * ud)
 	return;
 }
 
-float get_frequency_by_autocorrelation(circular_buffer<SAMPLE>& samples, unsigned int n_samples, autocorrelator_t autocorrelator)
+float get_frequency_by_autocorrelation(circular_buffer<SAMPLE>& samples, unsigned int n_samples, autocorrelator_t autocorrelator, int& prev_tau)
 {
 	float max_autocorrelation = 0.0;
 	float freq = NAN;
@@ -546,16 +556,20 @@ float get_frequency_by_autocorrelation(circular_buffer<SAMPLE>& samples, unsigne
 	int current_best_tau = tau_min;
 	for (int tau = tau_min; tau < tau_max; tau++)
 	{
-		autocorrelation = autocorrelator(samples, n_samples, tau);
+		float window_factor = 1; //prev_tau == -1 ? 1 : 0.5 + (0.5*HANN_FACTOR(0.4 * prev_tau, tau));
+		autocorrelation = autocorrelator(samples, n_samples, tau) * window_factor;
+		cout <<"tau: " << tau << " " << autocorrelation << endl;
 		if (autocorrelation > max_autocorrelation)
 		{
 			max_autocorrelation = autocorrelation;
 			current_best_tau = tau;
 		}
 	}
+	
+	prev_tau = current_best_tau;
 	return ((float)SAMPLE_RATE) / ((float)current_best_tau);
 	//debug:
-	//return 110;
+	//return 440;
 }
 
 float autocorrelation_v1(circular_buffer<SAMPLE>& samples, unsigned int n_samples, unsigned int tau)
@@ -593,7 +607,58 @@ float getTargetFundamentalFrequency(float originalFundamentalFrequency, wav_pitc
     float aux = (log2f(originalFundamentalFrequency / ud->scale_fund_freq));
     int octave = (int)aux;
     int note = (int)roundf(OCTAVE_SUBDIVISION*(aux-octave));  // note in octave (from 0 (fundamental) to OCTAVE_SUBDIVISION - 1)
-    if(!ud->scale[note])	//todo: scale sacarlo de ud
+	if (note == OCTAVE_SUBDIVISION)
+	{
+		note = 0;
+		octave++;
+	}
+
+	//si la nota esta permitida
+	if (ud->scale[note])
+	{
+		cout << note << " " << note << endl;
+		return GET_FREQ(ud->scale_fund_freq, octave, note);
+	}
+
+	//si tengo que buscar otra:
+	int min_dist = INT_MAX;
+	int target_note = note;
+	int octave_offset = 0;
+
+	for (int i = -1; -OCTAVE_SUBDIVISION / 2 + 1 <= i; i--)
+	{
+		// tengo cuidado con que el modulo me puede dar negativo
+		int current_note = ((note + i % OCTAVE_SUBDIVISION) + OCTAVE_SUBDIVISION) % OCTAVE_SUBDIVISION;
+		if (ud->scale[current_note])
+		{
+			min_dist = -i;	// guardo el valor en positivo
+			target_note = current_note;
+			if (note + i < 0)
+				octave_offset = -1;
+			break;
+		}
+	}
+	for (int i = 1; i <= OCTAVE_SUBDIVISION / 2 + 1 ; i++)
+	{
+		// el modulo siempre va a dar positivo, no tengo que poner las operaciones extras
+		int current_note = (note + i) % OCTAVE_SUBDIVISION;
+		if (ud->scale[current_note])
+		{
+			if (i < min_dist)
+			{
+				min_dist = i;
+				target_note = current_note;
+			}
+			break;
+			if (note + i >= OCTAVE_SUBDIVISION)
+				octave_offset = +1;
+		}
+	}
+	cout << note << " " << target_note << endl;
+	return GET_FREQ(ud->scale_fund_freq, octave + octave_offset, target_note);
+
+															  
+/*    if(!ud->scale[note])	//todo: scale sacarlo de ud
     {
         float dif = OCTAVE_SUBDIVISION*(aux-octave) - roundf(OCTAVE_SUBDIVISION*(aux-octave));
         if( dif>0)  //to next allowed frequency
@@ -611,7 +676,8 @@ float getTargetFundamentalFrequency(float originalFundamentalFrequency, wav_pitc
             }
         }
     }
-    return GET_FREQ(ud->scale_fund_freq,octave, note);
+    return GET_FREQ(ud->scale_fund_freq,octave, note);*/
+
 }
 /*
 
