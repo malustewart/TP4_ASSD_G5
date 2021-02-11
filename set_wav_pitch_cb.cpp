@@ -5,6 +5,9 @@
 #include "set_wav_pitch_cb.h"
 #include "circular_buffer.h"
 #include "AudioFile.h"
+#include "aubio\aubio.h"
+
+
 #include <stdio.h>
 #include <math.h>
 #include <fstream>
@@ -18,8 +21,10 @@
 #define GET_FREQ(f,o,n)       (f * pow(2, ((float)(n) + OCTAVE_SUBDIVISION*(float)(octave))/OCTAVE_SUBDIVISION))
 
 #define OCTAVES             (5)
-//#define OCTAVE_SUBDIVISION  (12)
+#define OCTAVE_SUBDIVISION  (12)
 //#define FUND_FREQ C_FREQ
+
+#define MIN_FREQ C_FREQ
 #define C_FREQ  32.7
 #define Cs_FREQ 34.65
 #define D_FREQ  36.71
@@ -45,13 +50,11 @@
 #define HANN_FACTOR(length, position) (0.5*(1+cos(2*3.1415926*(position)/(length))))
 
 
-
 int SAMPLE_RATE = 44100;
 
 using namespace std;
 
 typedef float SAMPLE;
-
 
 
 typedef struct wav_pitch_user_data_t
@@ -97,6 +100,7 @@ typedef float(*autocorrelator_t)(circular_buffer<SAMPLE>& samples, unsigned int 
 
 
 
+
 float get_frequency_by_autocorrelation(circular_buffer<SAMPLE>& samples, unsigned int n_samples, autocorrelator_t autocorrelator, int& prev_tau);
 void stretch(circular_buffer<SAMPLE> & samples_out, circular_buffer<SAMPLE> & samples_in, unsigned int n_samples, float originalFundamentalFrequency, float targetFundamentalFrequency);
 float getTargetFundamentalFrequency(float originalFundamentalFrequency, wav_pitch_user_data_t * ud);
@@ -105,24 +109,6 @@ float autocorrelation_v2(circular_buffer<SAMPLE> &  samples, unsigned int n_samp
 unsigned int getPitchMarkOffset(circular_buffer<SAMPLE> & samples, unsigned int tau);
 int getOutputWindowCenter(int window_index, unsigned int offset, float window_length, float stretch);
 
-
-/*bool scale[OCTAVE_SUBDIVISION] =
-        {
-            true,   // I
-            false,  // IIb
-            true,   // II
-            false,  // IIIb
-            true,   // III
-            false,  // IV
-            true,   // IV#/Vb
-            false,  // V
-            true,   // V#/VIb
-            false,  // VI
-            true,   // VIIb
-            false   // VII
-        };*/
-
-//float scale_fund_freq = C_FREQ;
 
 
 
@@ -186,7 +172,7 @@ static int process_window( const void *inputBuffer, void *outputBuffer,
                 }
             }
 
-            float originalFundF = get_frequency_by_autocorrelation_v1(*(ud->samples_in_left), framesPerBuffer, ud->prev_tau);
+            float originalFundF = ud->freq_detector(*(ud->samples_in_left), framesPerBuffer, ud->prev_tau);
 			int originalFundF_int = 0, targetFundF_int = 0;
             float targetFundF = 0.0f;
             if (!isnan(originalFundF))
@@ -393,6 +379,43 @@ float get_frequency_by_autocorrelation_v1(circular_buffer<SAMPLE>& samples, unsi
 	return get_frequency_by_autocorrelation(samples, n_samples, autocorrelation_v1, prev_tau);
 }
 
+float get_frequency_by_yin(circular_buffer<SAMPLE>& samples, unsigned int n_samples, int& prev_tau)
+{
+	float freq;
+	// 1. allocate some memory
+	uint_t n = 0; // frame counter
+	uint_t win_s = n_samples * 4; // window size
+	uint_t hop_s = n_samples; // hop size
+
+							   // create some vectors
+	fvec_t *input = new_fvec(hop_s); // input buffer
+	fvec_t *out = new_fvec(1); // output candidates
+							   // create pitch object
+	aubio_pitch_t *o = new_aubio_pitch("default", win_s, hop_s, SAMPLE_RATE);
+	 
+	for (size_t i = 0; i < hop_s; i++)
+	{
+		input->data[i] = samples[i];
+	}
+
+	// 2. do something with it
+	// get `hop_s` new samples into `input`
+	// ...
+	// exectute pitch
+	aubio_pitch_do(o, input, out);
+
+
+	freq = out->data[0];
+	
+	// 3. clean up memory
+	del_aubio_pitch(o);
+	del_fvec(out);
+	del_fvec(input);
+	aubio_cleanup();
+
+	return freq;
+}
+
 wav_pitch_user_data_t * create_user_data(freq_detector_t freq_detector)
 {
 	circular_buffer<SAMPLE> * samples_in_left = new circular_buffer<SAMPLE>;
@@ -467,6 +490,7 @@ void set_alvin_user_data(wav_pitch_user_data_t * ud, float stretch)
 	ud->is_alvin = true;
 	ud->stretch = stretch;
 }
+
 void set_duki_user_data(wav_pitch_user_data_t* ud, scale_t scale_)
 {
 	ud->is_alvin = false;
@@ -558,7 +582,6 @@ float get_frequency_by_autocorrelation(circular_buffer<SAMPLE>& samples, unsigne
 	{
 		float window_factor = 1; //prev_tau == -1 ? 1 : 0.5 + (0.5*HANN_FACTOR(0.4 * prev_tau, tau));
 		autocorrelation = autocorrelator(samples, n_samples, tau) * window_factor;
-		cout <<"tau: " << tau << " " << autocorrelation << endl;
 		if (autocorrelation > max_autocorrelation)
 		{
 			max_autocorrelation = autocorrelation;
@@ -596,7 +619,8 @@ float autocorrelation_v2(circular_buffer<SAMPLE>& samples, unsigned int n_sample
 
 float getTargetFundamentalFrequency(float originalFundamentalFrequency, wav_pitch_user_data_t * ud)
 {
-    if(isnan(originalFundamentalFrequency))
+
+	if(isnan(originalFundamentalFrequency))
     {
         return originalFundamentalFrequency;
     }
@@ -604,6 +628,11 @@ float getTargetFundamentalFrequency(float originalFundamentalFrequency, wav_pitc
 	{
 		return originalFundamentalFrequency * ud->stretch;
 	}
+	if (originalFundamentalFrequency < MIN_FREQ)
+	{
+		return originalFundamentalFrequency;
+	}
+
     float aux = (log2f(originalFundamentalFrequency / ud->scale_fund_freq));
     int octave = (int)aux;
     int note = (int)roundf(OCTAVE_SUBDIVISION*(aux-octave));  // note in octave (from 0 (fundamental) to OCTAVE_SUBDIVISION - 1)
@@ -613,10 +642,12 @@ float getTargetFundamentalFrequency(float originalFundamentalFrequency, wav_pitc
 		octave++;
 	}
 
+
+
 	//si la nota esta permitida
 	if (ud->scale[note])
 	{
-		cout << note << " " << note << endl;
+		//cout << note << " " << note << endl;
 		return GET_FREQ(ud->scale_fund_freq, octave, note);
 	}
 
@@ -654,7 +685,7 @@ float getTargetFundamentalFrequency(float originalFundamentalFrequency, wav_pitc
 				octave_offset = +1;
 		}
 	}
-	cout << note << " " << target_note << endl;
+	//cout << note << " " << target_note << endl;
 	return GET_FREQ(ud->scale_fund_freq, octave + octave_offset, target_note);
 
 															  

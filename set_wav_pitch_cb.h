@@ -23,6 +23,8 @@ typedef float(*freq_detector_t)(circular_buffer<float>& samples, unsigned int n_
 // Frequency detectors
 float get_frequency_by_autocorrelation_v1(circular_buffer<SAMPLE>& samples, unsigned int n_samples, int& prev_tau);
 float get_frequency_by_autocorrelation_v2(circular_buffer<SAMPLE>& samples, unsigned int n_samples, int& prev_tau);
+float get_frequency_by_yin               (circular_buffer<SAMPLE>& samples, unsigned int n_samples, int& prev_tau);
+
 
 // Managing configurations:
 wav_pitch_user_data_t * create_user_data(freq_detector_t freq_detector = get_frequency_by_autocorrelation_v2);
