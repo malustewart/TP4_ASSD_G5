@@ -12,13 +12,14 @@
 #include <math.h>
 #include <fstream>
 #include <vector>
+#include <chrono>
 
-#define FRAMES_PER_BUFFER   (1024)
+#define FRAMES_PER_BUFFER   (2048)
 
 #define FREC_FUND_MIN       (100)
 #define FREC_FUND_MAX       (700)
 
-#define GET_FREQ(f,o,n)       (f * pow(2, ((float)(n) + OCTAVE_SUBDIVISION*(float)(octave))/OCTAVE_SUBDIVISION))
+#define GET_FREQ(f,o,n)       (f * pow(2, ((float)(n) + OCTAVE_SUBDIVISION*(float)(o))/OCTAVE_SUBDIVISION))
 
 #define OCTAVES             (5)
 #define OCTAVE_SUBDIVISION  (12)
@@ -172,16 +173,21 @@ static int process_window( const void *inputBuffer, void *outputBuffer,
                 }
             }
 
-            float originalFundF = ud->freq_detector(*(ud->samples_in_left), framesPerBuffer, ud->prev_tau);
+			float originalFundF = ud->freq_detector(*(ud->samples_in_left), framesPerBuffer, ud->prev_tau);
+
+
+
 			int originalFundF_int = 0, targetFundF_int = 0;
             float targetFundF = 0.0f;
             if (!isnan(originalFundF))
             {
+				originalFundF_int = (int)originalFundF;
+
 				targetFundF = getTargetFundamentalFrequency(originalFundF, ud);
                 stretch(*(ud->samples_out_left) , *(ud->samples_in_left) , framesPerBuffer, originalFundF, targetFundF);
                 stretch(*(ud->samples_out_right), *(ud->samples_in_right), framesPerBuffer, originalFundF, targetFundF);
 			
-				originalFundF_int = (int)originalFundF; targetFundF_int = (int)targetFundF;
+				targetFundF_int = (int)targetFundF;
 			}
 
 			ud->freq_det_bin->write((char*)&originalFundF_int, sizeof(int));
@@ -295,7 +301,6 @@ PaError set_wav_pitch_cb(PaStream*& stream,
 
 void process_wav(wav_pitch_user_data_t * userdata)
 {
-
 	AudioFile<float> wav_manager;
 	std::string file_name(userdata->wav_filename);
 	file_name += WAV_EXTENSION;
@@ -391,12 +396,18 @@ float get_frequency_by_yin(circular_buffer<SAMPLE>& samples, unsigned int n_samp
 	fvec_t *input = new_fvec(hop_s); // input buffer
 	fvec_t *out = new_fvec(1); // output candidates
 							   // create pitch object
-	aubio_pitch_t *o = new_aubio_pitch("default", win_s, hop_s, SAMPLE_RATE);
-	 
-	for (size_t i = 0; i < hop_s; i++)
-	{
+	
+	
+
+	auto t1 = std::chrono::high_resolution_clock::now();
+	for (size_t i = 0; i < hop_s; i++) {
 		input->data[i] = samples[i];
 	}
+	auto t2 = std::chrono::high_resolution_clock::now();
+
+	aubio_pitch_t *o = new_aubio_pitch("default", win_s, hop_s, SAMPLE_RATE);
+	 
+
 
 	// 2. do something with it
 	// get `hop_s` new samples into `input`
@@ -409,6 +420,13 @@ float get_frequency_by_yin(circular_buffer<SAMPLE>& samples, unsigned int n_samp
 	
 	// 3. clean up memory
 	del_aubio_pitch(o);
+
+	auto t3 = std::chrono::high_resolution_clock::now();
+
+	auto duration1 = std::chrono::duration_cast<std::chrono::microseconds>(t2 - t1).count();
+	auto duration2 = std::chrono::duration_cast<std::chrono::microseconds>(t3 - t2).count();
+	std::cout << duration1 << " us || " << duration2 << " us" << std::endl;
+
 	del_fvec(out);
 	del_fvec(input);
 	aubio_cleanup();
@@ -664,8 +682,7 @@ float getTargetFundamentalFrequency(float originalFundamentalFrequency, wav_pitc
 		{
 			min_dist = -i;	// guardo el valor en positivo
 			target_note = current_note;
-			if (note + i < 0)
-				octave_offset = -1;
+			octave_offset = (note + i < 0) ? -1 : 0;
 			break;
 		}
 	}
@@ -679,13 +696,11 @@ float getTargetFundamentalFrequency(float originalFundamentalFrequency, wav_pitc
 			{
 				min_dist = i;
 				target_note = current_note;
+				octave_offset = (note + i >= OCTAVE_SUBDIVISION) ? 1 : 0;
 			}
 			break;
-			if (note + i >= OCTAVE_SUBDIVISION)
-				octave_offset = +1;
 		}
 	}
-	//cout << note << " " << target_note << endl;
 	return GET_FREQ(ud->scale_fund_freq, octave + octave_offset, target_note);
 
 															  
