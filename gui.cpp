@@ -224,6 +224,10 @@ bool confirm_data(bool data_enter)
 	return config_done;
 }
 
+bool stop_playback()
+{
+	return ImGui::Button("Stop processing");
+}
 
 void set_graphics(const char* foto)
 {

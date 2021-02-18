@@ -14,7 +14,7 @@
 #include <vector>
 #include <chrono>
 
-#define FRAMES_PER_BUFFER   (2048)
+#define FRAMES_PER_BUFFER   (1024)
 
 #define FREC_FUND_MIN       (100)
 #define FREC_FUND_MAX       (700)
@@ -50,15 +50,17 @@
 
 #define HANN_FACTOR(length, position) (0.5*(1+cos(2*3.1415926*(position)/(length))))
 
+#define PA_SAMPLE_TYPE  paFloat32
 
-int SAMPLE_RATE = 44100;
+
+int SAMPLE_RATE = 20000;
 
 using namespace std;
 
 typedef float SAMPLE;
 
 
-typedef struct wav_pitch_user_data_t
+typedef struct pitch_user_data_t
 {
     circular_buffer<SAMPLE> * samples_in_left;
     circular_buffer<SAMPLE> * samples_in_right;
@@ -91,11 +93,12 @@ typedef struct wav_pitch_user_data_t
 	const char * freq_obj_suffix;
 
 	// FOR REAL TIME
-
+	PaStream * stream;
+	PaStreamParameters inputParameters, outputParameters;
 	/******************/
 
 
-} wav_pitch_user_data_t;
+} pitch_user_data_t;
 
 typedef float(*autocorrelator_t)(circular_buffer<SAMPLE>& samples, unsigned int n_samples, unsigned int tau);
 
@@ -104,7 +107,7 @@ typedef float(*autocorrelator_t)(circular_buffer<SAMPLE>& samples, unsigned int 
 
 float get_frequency_by_autocorrelation(circular_buffer<SAMPLE>& samples, unsigned int n_samples, autocorrelator_t autocorrelator, int& prev_tau);
 void stretch(circular_buffer<SAMPLE> & samples_out, circular_buffer<SAMPLE> & samples_in, unsigned int n_samples, float originalFundamentalFrequency, float targetFundamentalFrequency);
-float getTargetFundamentalFrequency(float originalFundamentalFrequency, wav_pitch_user_data_t * ud);
+float getTargetFundamentalFrequency(float originalFundamentalFrequency, pitch_user_data_t * ud);
 float autocorrelation_v1(circular_buffer<SAMPLE> &  samples, unsigned int n_samples, unsigned int tau);
 float autocorrelation_v2(circular_buffer<SAMPLE> &  samples, unsigned int n_samples, unsigned int tau);
 unsigned int getPitchMarkOffset(circular_buffer<SAMPLE> & samples, unsigned int tau);
@@ -124,7 +127,7 @@ static int process_window( const void *inputBuffer, void *outputBuffer,
 
     (void) timeInfo; /* Prevent unused variable warnings. */
     (void) statusFlags;
-    wav_pitch_user_data_t * ud = (wav_pitch_user_data_t *) userData;
+    pitch_user_data_t * ud = (pitch_user_data_t *) userData;
 
 
     if( inputBuffer == NULL )
@@ -189,10 +192,12 @@ static int process_window( const void *inputBuffer, void *outputBuffer,
 			
 				targetFundF_int = (int)targetFundF;
 			}
-
-			ud->freq_det_bin->write((char*)&originalFundF_int, sizeof(int));
-			ud->freq_obj_bin->write((char*)&targetFundF_int, sizeof(int));
-
+			if (!ud->is_real_time)
+			{
+				ud->freq_det_bin->write((char*)&originalFundF_int, sizeof(int));
+				ud->freq_obj_bin->write((char*)&targetFundF_int, sizeof(int));
+			}
+			
 
             for (int i = 0; i < framesPerBuffer; ++i)
             {
@@ -212,76 +217,61 @@ static int process_window( const void *inputBuffer, void *outputBuffer,
 }
 
 
-
-
-PaError set_wav_pitch_cb(PaStream*& stream,
-	PaStreamParameters& inputParameters,
-	PaStreamParameters& outputParameters,
-	PaError& err)
+int run_real_time(pitch_user_data_t * userdata)
 {
 
-	wav_pitch_user_data_t * userdata = create_user_data();
-	set_wav_user_data(userdata, WAV_FILE, "_freq", "_out", "_det","_obj" );
-#ifdef USE_WAV
-	AudioFile<float> wav_manager;
-	std::string file_name(WAV_FILE);
-	file_name += WAV_EXTENSION;
+	//******PORTAUDIO CONFIG***********//
+	PaError err = Pa_Initialize();
 
-	wav_manager.load(file_name.c_str());
-	wav_manager.printSummary();
+	const PaDeviceInfo *deviceInfo;
+	int numDevices = Pa_GetDeviceCount();
 
-	int n_samples = wav_manager.getNumSamplesPerChannel();
-
-
-	float * output_samples = new float[2 * n_samples + FRAMES_PER_BUFFER];
-	float * input_samples = new float[2 * n_samples + FRAMES_PER_BUFFER];
-	float * input_samples_aux = input_samples;
-	float * output_samples_aux = output_samples;
-
-
-
-	//Load input samples in callback-friendly buffer format
-	for (int i = 0; i < n_samples; i++)
+	for (int i = 0; i < numDevices; i++)
 	{
-		*input_samples_aux++ = wav_manager.samples[0][i];
-		*input_samples_aux++ = wav_manager.samples[1][i];
+		deviceInfo = Pa_GetDeviceInfo(i);
+		printf("--------------------------------------- device #%d\n", i);
+		printf("Name                        = %s\n", deviceInfo->name);
+	}
+	if (err == paNoError) //INPUT STREAM CONFIG
+	{
+		userdata->inputParameters.device = Pa_GetDefaultInputDevice(); /* default input device */
+		if (userdata->inputParameters.device == paNoDevice)
+		{
+			fprintf(stderr, "Error: No default input device.\n");
+			err++;  //Indicar que hubo error sin indicar un error en especifico.
+		}
+		else
+		{
+			userdata->inputParameters.channelCount = 2;       /* stereo input */
+			userdata->inputParameters.sampleFormat = PA_SAMPLE_TYPE;
+			userdata->inputParameters.suggestedLatency = Pa_GetDeviceInfo(userdata->inputParameters.device)->defaultLowInputLatency;
+			userdata->inputParameters.hostApiSpecificStreamInfo = nullptr;
+		}
 	}
 
-	PaStreamCallbackFlags statusFlags = 0;
 
-	// Process wav
-	for (int i = 0; i < n_samples / (FRAMES_PER_BUFFER / 2); i++)
+	if (err == paNoError) //OUTPUT STREAM CONFIG
 	{
-		process_window((const void *)(input_samples + i * FRAMES_PER_BUFFER),
-			output_samples + i * FRAMES_PER_BUFFER,
-			FRAMES_PER_BUFFER,
-			nullptr,
-			statusFlags,
-			(void*)(userdata));
+		userdata->outputParameters.device = Pa_GetDefaultOutputDevice(); /* default output device */
+		//userdata->outputParameters.device = 5;
+		if (userdata->outputParameters.device == paNoDevice)
+		{
+			fprintf(stderr, "Error: No default output device.\n");
+			err++;  //Indicar que hubo error sin indicar un error en especifico.
+		}
+		else
+		{
+			userdata->outputParameters.channelCount = 2;       /* stereo output */
+			userdata->outputParameters.sampleFormat = PA_SAMPLE_TYPE;
+			userdata->outputParameters.suggestedLatency = Pa_GetDeviceInfo(userdata->outputParameters.device)->defaultLowOutputLatency;
+			userdata->outputParameters.hostApiSpecificStreamInfo = nullptr;
+		}
 	}
-
-	// Store new wav
-	for (int i = 0; i < n_samples; i++)
-	{
-		wav_manager.samples[0][i] = *output_samples_aux++;
-		wav_manager.samples[1][i] = *output_samples_aux++;
-	}
-
-	file_name = std::string(userdata->wav_filename);
-	file_name += userdata->out_suffix;
-	file_name += WAV_EXTENSION;
-
-	wav_manager.save(file_name.c_str());
-	delete output_samples;
-	delete input_samples;
-#else
-
-	char control = 0;
 
 	err = Pa_OpenStream(
-		&stream,
-		&inputParameters,
-		&outputParameters,
+		&userdata->stream,
+		&userdata->inputParameters,
+		&userdata->outputParameters,
 		SAMPLE_RATE,
 		FRAMES_PER_BUFFER,
 		0, /* paClipOff, */  /* we won't output out of range samples so don't bother clipping them */
@@ -289,17 +279,32 @@ PaError set_wav_pitch_cb(PaStream*& stream,
 		(void *)userdata);
 	if (err == paNoError)
 	{
-		err = Pa_StartStream(stream);
+		err = Pa_StartStream(userdata->stream);
 		//       getchar();
 	}
-#endif
-
-	return err;
+	return (int)err;
 }
 
+void stop_real_time(pitch_user_data_t * userdata)
+{
 
+	int err = Pa_CloseStream(userdata->stream ); //todo: no llamar a esto si nunca se abrio el stream, por ejemplo en modo wav
+	if( err == paNoError )
+	{
+	    printf("Finished.");
+	    Pa_Terminate();
+	}
+	else
+	{
+	    Pa_Terminate();
+	    fprintf( stderr, "An error occured while using the portaudio stream\n" );
+	    fprintf( stderr, "Error number: %d\n", err );
+	    fprintf( stderr, "Error message: %s\n", Pa_GetErrorText( err ) );
+	}
+	
+}
 
-void process_wav(wav_pitch_user_data_t * userdata)
+void process_wav(pitch_user_data_t * userdata)
 {
 	AudioFile<float> wav_manager;
 	std::string file_name(userdata->wav_filename);
@@ -373,7 +378,6 @@ void process_wav(wav_pitch_user_data_t * userdata)
 	delete_user_data(userdata);
 }
 
-//todo: hacer con SAMPLE * en vez de circular_buffer<SAMPLE>&
 float get_frequency_by_autocorrelation_v2(circular_buffer<SAMPLE>& samples, unsigned int n_samples, int& prev_tau)
 {
 	return get_frequency_by_autocorrelation(samples, n_samples, autocorrelation_v2, prev_tau);
@@ -399,11 +403,11 @@ float get_frequency_by_yin(circular_buffer<SAMPLE>& samples, unsigned int n_samp
 	
 	
 
-	auto t1 = std::chrono::high_resolution_clock::now();
+	//auto t1 = std::chrono::high_resolution_clock::now();
 	for (size_t i = 0; i < hop_s; i++) {
 		input->data[i] = samples[i];
 	}
-	auto t2 = std::chrono::high_resolution_clock::now();
+	//auto t2 = std::chrono::high_resolution_clock::now();
 
 	aubio_pitch_t *o = new_aubio_pitch("default", win_s, hop_s, SAMPLE_RATE);
 	 
@@ -421,11 +425,11 @@ float get_frequency_by_yin(circular_buffer<SAMPLE>& samples, unsigned int n_samp
 	// 3. clean up memory
 	del_aubio_pitch(o);
 
-	auto t3 = std::chrono::high_resolution_clock::now();
+	//auto t3 = std::chrono::high_resolution_clock::now();
 
-	auto duration1 = std::chrono::duration_cast<std::chrono::microseconds>(t2 - t1).count();
-	auto duration2 = std::chrono::duration_cast<std::chrono::microseconds>(t3 - t2).count();
-	std::cout << duration1 << " us || " << duration2 << " us" << std::endl;
+	//auto duration1 = std::chrono::duration_cast<std::chrono::microseconds>(t2 - t1).count();
+	//auto duration2 = std::chrono::duration_cast<std::chrono::microseconds>(t3 - t2).count();
+	//std::cout << duration1 << " us || " << duration2 << " us" << std::endl;
 
 	del_fvec(out);
 	del_fvec(input);
@@ -434,7 +438,7 @@ float get_frequency_by_yin(circular_buffer<SAMPLE>& samples, unsigned int n_samp
 	return freq;
 }
 
-wav_pitch_user_data_t * create_user_data(freq_detector_t freq_detector)
+pitch_user_data_t * create_user_data(freq_detector_t freq_detector)
 {
 	circular_buffer<SAMPLE> * samples_in_left = new circular_buffer<SAMPLE>;
 	circular_buffer<SAMPLE> * samples_in_right = new circular_buffer<SAMPLE>;
@@ -452,7 +456,7 @@ wav_pitch_user_data_t * create_user_data(freq_detector_t freq_detector)
 		samples_out_right->push_back(0.0);
 	}
 
-	wav_pitch_user_data_t * userdata = new wav_pitch_user_data_t;
+	pitch_user_data_t * userdata = new pitch_user_data_t;
 
 	userdata->samples_in_left = samples_in_left;
 	userdata->samples_in_right = samples_in_right;
@@ -476,7 +480,29 @@ wav_pitch_user_data_t * create_user_data(freq_detector_t freq_detector)
 	return userdata;
 }
 
-wav_pitch_user_data_t * set_wav_user_data(wav_pitch_user_data_t * ud, const char * filename, const char * bin_suffix, const char * out_suffix, const char * freq_det_suffix, const char * freq_obj_suffix)
+void delete_user_data(pitch_user_data_t * ud)
+{
+	if (ud->freq_det_bin)
+	{
+		ud->freq_det_bin->close();
+		delete ud->freq_det_bin;
+	}
+	if (ud->freq_obj_bin)
+	{
+		ud->freq_obj_bin->close();
+		delete ud->freq_obj_bin;
+	}
+	delete ud->samples_in_left;
+	delete ud->samples_in_right;
+	delete ud->samples_out_left;
+	delete ud->samples_out_right;
+
+	delete ud;
+
+	return;
+}
+
+pitch_user_data_t * set_wav_user_data(pitch_user_data_t * ud, const char * filename, const char * bin_suffix, const char * out_suffix, const char * freq_det_suffix, const char * freq_obj_suffix)
 {
 	ud->prev_tau = -1;
 
@@ -499,17 +525,37 @@ wav_pitch_user_data_t * set_wav_user_data(wav_pitch_user_data_t * ud, const char
 	freq_obj_file_name += freq_obj_suffix;
 	freq_obj_file_name += ".bin";
 	ud->freq_obj_bin = new ofstream(freq_obj_file_name.c_str(), ios::binary | ios::out);
+
+	ud->is_real_time = false;
 	
 	return ud;
 }
 
-void set_alvin_user_data(wav_pitch_user_data_t * ud, float stretch)
+pitch_user_data_t * set_real_time_user_data(pitch_user_data_t * ud)
+{
+	ud->prev_tau = -1;
+
+	ud->bin_suffix		= nullptr;
+	ud->out_suffix		= nullptr;
+	ud->wav_filename	= nullptr;
+	ud->freq_det_suffix = nullptr;
+	ud->freq_obj_suffix = nullptr;
+	ud->freq_det_bin	= nullptr;
+	ud->freq_obj_bin	= nullptr;
+
+	ud->is_real_time = true;
+
+	return ud;
+}
+
+pitch_user_data_t * set_alvin_user_data(pitch_user_data_t * ud, float stretch)
 {
 	ud->is_alvin = true;
 	ud->stretch = stretch;
+	return ud;
 }
 
-void set_duki_user_data(wav_pitch_user_data_t* ud, scale_t scale_)
+pitch_user_data_t * set_duki_user_data(pitch_user_data_t* ud, scale_t scale_)
 {
 	ud->is_alvin = false;
 	for (int i = 0; i < OCTAVE_SUBDIVISION; i++)
@@ -517,6 +563,7 @@ void set_duki_user_data(wav_pitch_user_data_t* ud, scale_t scale_)
 		ud->scale[i] = scale_.scale_octave[i];
 	}
 	ud->scale_fund_freq = SelectedFundFrec(scale_.note_number);
+	return ud;
 }
 
 float SelectedFundFrec(int note)
@@ -566,28 +613,6 @@ float SelectedFundFrec(int note)
 	return fundFreq;
 }
 
-void delete_user_data(wav_pitch_user_data_t * ud)
-{
-	if (ud->freq_det_bin) 
-	{ 
-		ud->freq_det_bin->close();
-		delete ud->freq_det_bin;
-	}
-	if (ud->freq_obj_bin)
-	{
-		ud->freq_obj_bin->close();
-		delete ud->freq_obj_bin;
-	}
-	delete ud->samples_in_left;
-	delete ud->samples_in_right;
-	delete ud->samples_out_left;
-	delete ud->samples_out_right;
-
-	delete ud;
-
-	return;
-}
-
 float get_frequency_by_autocorrelation(circular_buffer<SAMPLE>& samples, unsigned int n_samples, autocorrelator_t autocorrelator, int& prev_tau)
 {
 	float max_autocorrelation = 0.0;
@@ -635,7 +660,7 @@ float autocorrelation_v2(circular_buffer<SAMPLE>& samples, unsigned int n_sample
     return autocorrelation;
 }
 
-float getTargetFundamentalFrequency(float originalFundamentalFrequency, wav_pitch_user_data_t * ud)
+float getTargetFundamentalFrequency(float originalFundamentalFrequency, pitch_user_data_t * ud)
 {
 
 	if(isnan(originalFundamentalFrequency))

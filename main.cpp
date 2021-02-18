@@ -8,7 +8,6 @@
 #include <fstream>
 
 
-#define PA_SAMPLE_TYPE  paFloat32
 
 using namespace std;
 
@@ -22,7 +21,7 @@ void run_duki_debug(const char * note, int note_number, bool * scale, const char
 		s.scale_octave[i] = scale[i];
 	}
 
-	wav_pitch_user_data_t * userdata = create_user_data(get_frequency_by_autocorrelation_v2);
+	pitch_user_data_t * userdata = create_user_data(get_frequency_by_yin);
 	set_duki_user_data(userdata, s);
 	set_wav_user_data(userdata, wav_filename, "_bin", out_suffix, "_det", "_obj");
 	process_wav(userdata);
@@ -31,80 +30,44 @@ void run_duki_debug(const char * note, int note_number, bool * scale, const char
 
 int main() {
 
-	//DEBUG
-	const char* n[] = { "LA", "MI", "MI", "MI", "As", "" };
-	int note_number[] = { LA, MI, MI, MI, LAs };
-	const char * f[] = { "440_A4", "658_E5", "329_E4", "168_E3", "233_Bb3" };
-	bool sc[] = {true, false, false, false, false, false, false, false, 
-				false, false, false, false};
-	
-	for (size_t i = 0; strcmp(n[i], ""); i++)
-	{
-		//run_duki_debug(n[i], note_number[i], sc, f[i], "_out_duki_+0");
-	}
-
-	sc[0] = false;
-	sc[3] = true;
-//	for (size_t i = 0; strcmp(n[i], ""); i++)
-	{
-		run_duki_debug(n[2], note_number[2], sc, f[2], "_out_duki_+4");
-	}
-
-
-	return 0;
-	//END DEBUG
-
-//******PORTAUDIO CONFIG***********//
-    PaStreamParameters inputParameters, outputParameters;
-    PaStream * stream;
-    PaError err = Pa_Initialize();
+//	//DEBUG
+//	const char* n[] = { "LA", "MI", "RE", "MI", "As", "" };
+//	int note_number[] = { LA, MI, RE, MI, LAs };
+//	const char * f[] = { "440_A4", "658_E5", "king_love", "168_E3", "233_Bb3" };
+//	bool sc[] = {false, false, true, false, false, false, true, false, true, false, 
+//				false, true};
+//
+//
+//	//for (size_t i = 0; strcmp(n[i], ""); i++)
+//	//{
+//	//	run_duki_debug(n[i], note_number[i], sc, f[i], "_out_duki_+0");
+//	//}
+//
+//	//sc[0] = false;
+//	//sc[9] = true;
+////	for (size_t i = 0; strcmp(n[i], ""); i++)
+//	{
+//		run_duki_debug(n[2], note_number[2], sc, f[2], "_out_duki");
+//	}
+//
+//
+//	return 0;
+//	//END DEBUG
 
 
-    if( err == paNoError ) //INPUT STREAM CONFIG
-    {
-        inputParameters.device = Pa_GetDefaultInputDevice(); /* default input device */
-        if (inputParameters.device == paNoDevice)
-        {
-            fprintf(stderr,"Error: No default input device.\n");
-            err++;  //Indicar que hubo error sin indicar un error en especifico.
-        }
-        else
-        {
-            inputParameters.channelCount = 2;       /* stereo input */
-            inputParameters.sampleFormat = PA_SAMPLE_TYPE;
-            inputParameters.suggestedLatency = Pa_GetDeviceInfo( inputParameters.device )->defaultLowInputLatency;
-            inputParameters.hostApiSpecificStreamInfo = nullptr;
-        }
-    }
-    if( err == paNoError ) //OUTPUT STREAM CONFIG
-    {
-        outputParameters.device = Pa_GetDefaultOutputDevice(); /* default output device */
-        if (outputParameters.device == paNoDevice)
-        {
-            fprintf(stderr,"Error: No default output device.\n");
-            err++;  //Indicar que hubo error sin indicar un error en especifico.
-        }
-        else
-        {
-            outputParameters.channelCount = 2;       /* stereo output */
-            outputParameters.sampleFormat = PA_SAMPLE_TYPE;
-            outputParameters.suggestedLatency = Pa_GetDeviceInfo( outputParameters.device )->defaultLowOutputLatency;
-            outputParameters.hostApiSpecificStreamInfo = nullptr;
-        }
-    }
 
 //******DEAR IMGUI CONFIG***********//
      //inicializamos la parte grafica
     allegro_settings_t all_settings = gui_init();
     // main loop
     bool running = true;
+	bool processing_audio = false;
 
 
 
-	wav_pitch_user_data_t * userdata = create_user_data(get_frequency_by_autocorrelation_v2);
+	pitch_user_data_t * userdata = create_user_data(get_frequency_by_autocorrelation_v2);
 
 
-	//	err = set_wav_pitch_cb(stream, inputParameters, outputParameters, err);
 
 
 	while (running)
@@ -143,43 +106,28 @@ int main() {
                 set_duki_user_data(userdata, scale);
             }
 
-            if (mode_selected == "AUDIO RECORDING")
+            if (mode_selected == "AUDIO RECORDING" && !processing_audio)
             {
  //               set_graphics("foto.PNG");
                 set_wav_user_data(userdata, wav, "_freq", "", "_det", "_obj");
-                process_wav(userdata);
+				process_wav(userdata);
                 running = false;
             }
-            else if (mode_selected == "REAL TIME")
+            else if (mode_selected == "REAL TIME" && !processing_audio)
             {
-                // todo: start stream
-            }
+				set_real_time_user_data(userdata);
+				run_real_time(userdata);
+				processing_audio = true;
+			}
+			if (stop_playback())
+			{
+				stop_real_time(userdata);
+			}
         }
 
         end_gui();
 	}
 
-#ifndef USE_WAV
-
-
-    if(err == paNoError)
-    {
-        err = Pa_CloseStream( stream ); //todo: no llamar a esto si nunca se abrio el stream, por ejemplo en modo wav
-    }
-    if( err == paNoError )
-    {
-        printf("Finished.");
-        Pa_Terminate();
-    }
-    else
-    {
-        Pa_Terminate();
-        fprintf( stderr, "An error occured while using the portaudio stream\n" );
-        fprintf( stderr, "Error number: %d\n", err );
-        fprintf( stderr, "Error message: %s\n", Pa_GetErrorText( err ) );
-    }
-    
-#endif // USE_WAV
 
 
 

@@ -47,7 +47,7 @@ const char* select_characteristic(void);
 int select_factor(void);
 scale_t select_scale(void);
 bool confirm_data(bool data_enter);
-
+bool stop_playback();
 void set_graphics(const char* foto);
 void end_gui(void);
 
