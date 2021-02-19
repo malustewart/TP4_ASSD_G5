@@ -69,7 +69,6 @@ int main() {
 
 
 
-
 	while (running)
 	{
         running = create_window(all_settings, 5); //el segundo parametro es el tamano de la letra 
@@ -113,15 +112,16 @@ int main() {
 				process_wav(userdata);
                 running = false;
             }
-            else if (mode_selected == "REAL TIME" && !processing_audio)
-            {
+			else if (mode_selected == "REAL TIME" && !processing_audio)
+			{
 				set_real_time_user_data(userdata);
 				run_real_time(userdata);
-				processing_audio = true;
-			}
-			if (stop_playback())
-			{
-				stop_real_time(userdata);
+				char c = 0;
+				cin >> c;
+				if (c != 'c') {
+					stop_real_time(userdata);
+					running = false;
+				}
 			}
         }
 

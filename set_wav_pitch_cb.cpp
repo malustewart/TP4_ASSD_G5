@@ -252,8 +252,8 @@ int run_real_time(pitch_user_data_t * userdata)
 
 	if (err == paNoError) //OUTPUT STREAM CONFIG
 	{
-		userdata->outputParameters.device = Pa_GetDefaultOutputDevice(); /* default output device */
-		//userdata->outputParameters.device = 5;
+		//userdata->outputParameters.device = Pa_GetDefaultOutputDevice(); /* default output device */
+		userdata->outputParameters.device = 6;
 		if (userdata->outputParameters.device == paNoDevice)
 		{
 			fprintf(stderr, "Error: No default output device.\n");
