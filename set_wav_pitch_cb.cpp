@@ -14,7 +14,6 @@
 #include <vector>
 #include <chrono>
 
-#define FRAMES_PER_BUFFER   (1024)
 
 #define FREC_FUND_MIN       (100)
 #define FREC_FUND_MAX       (700)
@@ -52,7 +51,7 @@
 
 #define PA_SAMPLE_TYPE  paFloat32
 
-
+int FRAMES_PER_BUFFER = 2048;
 int SAMPLE_RATE = 20000;
 
 using namespace std;
@@ -219,7 +218,7 @@ static int process_window( const void *inputBuffer, void *outputBuffer,
 
 int run_real_time(pitch_user_data_t * userdata)
 {
-
+	FRAMES_PER_BUFFER = 1024;
 	//******PORTAUDIO CONFIG***********//
 	PaError err = Pa_Initialize();
 

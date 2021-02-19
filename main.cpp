@@ -6,54 +6,68 @@
 #include "gui.h"
 
 #include <fstream>
+#include <vector>
 
 
+#define	BATCHMODE
+
+#ifdef BATCHMODE
+
+typedef scale_t duki_data_t;
+
+typedef int alvin_note_t;
+
+#endif
 
 using namespace std;
 
 
-void run_duki_debug(const char * note, int note_number, bool * scale, const char * wav_filename, const char * out_suffix) {
-	scale_t s;
-	s.note = note;
-	s.note_number = note_number;
-	for (size_t i = 0; i < 12; i++)
-	{
-		s.scale_octave[i] = scale[i];
-	}
-
-	pitch_user_data_t * userdata = create_user_data(get_frequency_by_yin);
-	set_duki_user_data(userdata, s);
-	set_wav_user_data(userdata, wav_filename, "_bin", out_suffix, "_det", "_obj");
-	process_wav(userdata);
-}
 
 
 int main() {
 
-//	//DEBUG
-//	const char* n[] = { "LA", "MI", "RE", "MI", "As", "" };
-//	int note_number[] = { LA, MI, RE, MI, LAs };
-//	const char * f[] = { "440_A4", "658_E5", "king_love", "168_E3", "233_Bb3" };
-//	bool sc[] = {false, false, true, false, false, false, true, false, true, false, 
-//				false, true};
-//
-//
-//	//for (size_t i = 0; strcmp(n[i], ""); i++)
-//	//{
-//	//	run_duki_debug(n[i], note_number[i], sc, f[i], "_out_duki_+0");
-//	//}
-//
-//	//sc[0] = false;
-//	//sc[9] = true;
-////	for (size_t i = 0; strcmp(n[i], ""); i++)
-//	{
-//		run_duki_debug(n[2], note_number[2], sc, f[2], "_out_duki");
-//	}
-//
-//
-//	return 0;
-//	//END DEBUG
+#ifdef BATCHMODE
+	vector<alvin_note_t> alvin_notes = {0,1,-1, 4, -4, 12, -12};
+	vector<duki_data_t> dukis;
 
+	dukis.push_back({ "MI", MI, {true,false,true,false,true,false,true,false,true,false,true,false} });
+
+	vector<string> wavfiles = {"king_love", "sirena"};	//sin extension!!!!
+
+	for (auto wavfile : wavfiles)
+	{
+		for (auto& alvin_note : alvin_notes)
+		{
+			pitch_user_data_t * u = create_user_data(get_frequency_by_yin);
+			set_alvin_user_data(u, pow(2, alvin_note / 12.0));
+			string out_suffix = "_alvin_";
+			out_suffix += to_string(alvin_note);
+			set_wav_user_data(u, wavfile.c_str(),"_bin", out_suffix.c_str(), "_det", "_obj");
+			process_wav(u);
+			//delete_user_data(u);
+		}
+
+
+		for (auto& duki : dukis)
+		{
+			pitch_user_data_t * u = create_user_data(get_frequency_by_yin);
+			set_duki_user_data(u,duki);
+			string out_suffix = "_duki_";
+			out_suffix += duki.note;
+			for (size_t i = 0; i < OCTAVE_SUBDIVISION; i++) {
+				out_suffix += duki.scale_octave[i] ? '1' : '0';
+			}
+			out_suffix += "_";
+			set_wav_user_data(u, wavfile.c_str(), "_bin", out_suffix.c_str(), "_det", "_obj");
+			process_wav(u);
+			//delete_user_data(u);
+		}
+	}
+
+
+
+	return 0;
+#endif
 
 
 //******DEAR IMGUI CONFIG***********//
@@ -108,7 +122,7 @@ int main() {
             if (mode_selected == "AUDIO RECORDING" && !processing_audio)
             {
  //               set_graphics("foto.PNG");
-                set_wav_user_data(userdata, wav, "_freq", "", "_det", "_obj");
+                set_wav_user_data(userdata, wav, "_freq", "_out", "_det", "_obj");
 				process_wav(userdata);
                 running = false;
             }
