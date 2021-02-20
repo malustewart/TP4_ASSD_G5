@@ -115,7 +115,7 @@ int getOutputWindowCenter(int window_index, unsigned int offset, float window_le
 
 
 
-static int process_window( const void *inputBuffer, void *outputBuffer,
+static int process_buffer( const void *inputBuffer, void *outputBuffer,
                                unsigned long framesPerBuffer,
                                const PaStreamCallbackTimeInfo* timeInfo,
                                PaStreamCallbackFlags statusFlags,
@@ -274,7 +274,7 @@ int run_real_time(pitch_user_data_t * userdata)
 		SAMPLE_RATE,
 		FRAMES_PER_BUFFER,
 		0, /* paClipOff, */  /* we won't output out of range samples so don't bother clipping them */
-		process_window,
+		process_buffer,
 		(void *)userdata);
 	if (err == paNoError)
 	{
@@ -352,7 +352,7 @@ void process_wav(pitch_user_data_t * userdata)
 	PaStreamCallbackFlags statusFlags = 0;
 	for (int i = 0; i < n_samples / (FRAMES_PER_BUFFER); i++)
 	{
-		process_window((const void *)(input_samples + i * FRAMES_PER_BUFFER * 2),
+		process_buffer((const void *)(input_samples + i * FRAMES_PER_BUFFER * 2),
 			output_samples + i * FRAMES_PER_BUFFER * 2,
 			FRAMES_PER_BUFFER,
 			nullptr,
@@ -683,8 +683,6 @@ float getTargetFundamentalFrequency(float originalFundamentalFrequency, pitch_us
 		note = 0;
 		octave++;
 	}
-
-
 
 	//si la nota esta permitida
 	if (ud->scale[note])
