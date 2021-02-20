@@ -9,7 +9,7 @@
 #include <vector>
 
 
-#define	BATCHMODE
+//#define	BATCHMODE
 
 #ifdef BATCHMODE
 

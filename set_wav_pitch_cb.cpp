@@ -633,8 +633,7 @@ float get_frequency_by_autocorrelation(circular_buffer<SAMPLE>& samples, unsigne
 	
 	prev_tau = current_best_tau;
 	return ((float)SAMPLE_RATE) / ((float)current_best_tau);
-	//debug:
-	//return 440;
+
 }
 
 float autocorrelation_v1(circular_buffer<SAMPLE>& samples, unsigned int n_samples, unsigned int tau)
@@ -725,71 +724,8 @@ float getTargetFundamentalFrequency(float originalFundamentalFrequency, pitch_us
 	}
 	return GET_FREQ(ud->scale_fund_freq, octave + octave_offset, target_note);
 
-															  
-/*    if(!ud->scale[note])	//todo: scale sacarlo de ud
-    {
-        float dif = OCTAVE_SUBDIVISION*(aux-octave) - roundf(OCTAVE_SUBDIVISION*(aux-octave));
-        if( dif>0)  //to next allowed frequency
-        {
-            while (!ud->scale[note])
-            {
-                note = ++note % OCTAVE_SUBDIVISION;
-                if(!note){octave++;};   //if note=0, octave has been increased
-            }
-        } else {    //to previous allowed frequency
-            while (!ud->scale[note])
-            {
-                if(note) { note--; }  // if note is not first in octave
-                else{ note = OCTAVE_SUBDIVISION - 1; if(octave) {octave--;}};   //
-            }
-        }
-    }
-    return GET_FREQ(ud->scale_fund_freq,octave, note);*/
-
-}
-/*
-
-void stretch(circular_buffer<SAMPLE> & samples_out, circular_buffer<SAMPLE> & samples_in, unsigned int n_samples, float originalFundamentalFrequency, float targetFundamentalFrequency)
-{
-    float window_length =  SAMPLE_RATE/originalFundamentalFrequency*2;
-    unsigned int offset = getPitchMarkOffset(samples_in, (unsigned int)window_length);
-    int window_center_in = offset;
-    float stretch = 1.5;//targetFundamentalFrequency/originalFundamentalFrequency;
-    int window_center_out = getOutputWindowCenter(0, offset, window_length, stretch);
-
-
-    for(int i = 0, counter=0;   // i: samples_in. counter: samples_out.
-//        window_center_out <= n_samples;
-        window_center_out < n_samples + window_length;
-        ++i, ++counter)
-    {
-        window_center_in = offset + i * window_length / 2;
-        window_center_out = getOutputWindowCenter(counter, offset, window_length, stretch);
-
-
-        for (int j = -window_length/2;
-                 j <= window_length/2;
-                 j++)
-        {
-            if((window_center_in + j) >= 0 && (window_center_out + j) >=0)
-            {
-                float hann = HANN_FACTOR(window_length, j);
-                unsigned int index = window_center_out + j;
-                float value = samples_in[index];
-                float stored = samples_out[index];
-                samples_out[index] += value*hann/stretch;
-            }
-        }
-        if(counter % 3 == 0)
-        {
-            i--;
-        }
-    }
 }
 
-*/
-
-//todo: check for nan
 void stretch(circular_buffer<SAMPLE> & samples_out, circular_buffer<SAMPLE> & samples_in, unsigned int n_samples, float originalFundamentalFrequency, float targetFundamentalFrequency)
 {
     unsigned int offset = getPitchMarkOffset(samples_in, (unsigned int)(SAMPLE_RATE/originalFundamentalFrequency));
